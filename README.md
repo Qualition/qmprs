@@ -1,2 +1,2 @@
-# QSP-MPS
-QSP-MPS is a state-of-the-art package for preparing quantum states using Matrix Product States (MPS).
+# QMPRS
+qmprs is a state-of-the-art package for compressing quantum circuits using Matrix Product States (MPS).
