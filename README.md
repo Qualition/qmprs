@@ -1,2 +1,2 @@
 # QMPRS
-qmprs is a state-of-the-art package for compressing quantum circuits using Matrix Product States (MPS).
+qmprs is a state-of-the-art package for compressing quantum circuits using Quantum Matrix Product Reduced States (QMPRS). This package enables optimal state-preparation and unitary synthesis using a high fidelity approximation through Matrix Product States(MPS), which enable an exponential reduction from the conventional $O(2^N)$ for $N$ qubit operations. The package provides access to Qualition's state-of-the-art algorithm which enables another exponential reduction from the priorly mentioned MPS approaches, thus enabling near-term quantum applications for real-world use-cases.
