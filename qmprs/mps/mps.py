@@ -16,15 +16,17 @@ from __future__ import annotations
 
 __all__ = ['MPS']
 
+import copy
 import numpy as np
-from scipy import linalg
 import quimb.tensor as qtn # type: ignore
+from scipy import linalg # type: ignore
+from typing import Optional, Union
 
 # Import `qickit.data.Data`
 from qickit.data import Data # type: ignore
 
 # Import `qickit.types.Collection` and `qickit.types.NestedCollection`
-from qickit.types import Collection, NestedCollection
+from qickit.types import Collection, NestedCollection # type: ignore
 
 # Define `NumberType` as an alias for `int | float | complex`
 NumberType = int | float | complex
@@ -36,8 +38,10 @@ class MPS:
 
     Parameters
     ----------
-    `statevector` : qickit.data.Data | NestedCollection[NumberType]
+    `statevector` : qickit.data.Data | NestedCollection[NumberType], optional
         The statevector of the quantum system.
+    `mps` : qtn.MatrixProductState, optional
+        The matrix product state (MPS) of the quantum system.
     `bond_dimension` : int
         The maximum bond dimension of the MPS.
 
@@ -60,6 +64,10 @@ class MPS:
         If `bond_dimension` is not an integer.
     ValueError
         If `bond_dimension` is less than 1.
+        `bond_dimension` must be an integer greater than 0.
+        Cannot initialize with both `statevector` and `mps`.
+        Must provide either `statevector` or `mps`.
+        Only supports MPS with physical dimension=2.
 
     Usage
     -----
@@ -68,42 +76,53 @@ class MPS:
     >>> mps = MPS(statevector, bond_dimension)
     """
     def __init__(self,
-                 statevector: Data | NestedCollection[NumberType],
+                 statevector: Optional[Union[Data, NestedCollection[NumberType]]],
+                 mps: Optional[qtn.MatrixProductState],
                  bond_dimension: int) -> None:
-        """ Initialize a `qmprs.mps.MPS` instance.
+        """ Initialize a `qmprs.mps.MPS` instance. Pass only `statevector` to define
+        the MPS from the statevector. Pass only `mps` to define the MPS from the MPS.
         """
         # Ensure `bond_dimension` is an integer greater than 0
-        if not isinstance(bond_dimension, int):
-            raise TypeError("`bond_dimension` must be an integer.")
-        if bond_dimension < 1:
-            raise ValueError("`bond_dimension` must be greater than 0.")
+        if not isinstance(bond_dimension, int) or bond_dimension < 1:
+            raise ValueError("`bond_dimension` must be an integer greater than 0.")
 
-        # Ensure `statevector` is a `qickit.data.Data` instance
-        if not isinstance(statevector, Data):
-            statevector = Data(statevector)
+        # Determine initialization path
+        if statevector is not None and mps is not None:
+            raise ValueError("Cannot initialize with both `statevector` and `mps`.")
 
-        # Normalize and pad the data if necessary
-        if statevector.is_normalized is False:
-            statevector.normalize()
-        if statevector.is_padded is False:
-            statevector.pad()
+        elif statevector is not None:
+            # Initialize from statevector
+            if not isinstance(statevector, Data):
+                statevector = Data(statevector)
+            statevector.to_quantumstate()
+            self.statevector = statevector
+            self.mps = self.from_statevector(statevector, bond_dimension)
 
-        # Save the state vector for later use (i.e., re-indexing the MPS)
-        self.statevector = statevector
+        elif mps is not None:
+            # Initialize from MPS
+            if not isinstance(mps, qtn.MatrixProductState):
+                raise TypeError("`mps` must be a `qtn.MatrixProductState` instance.")
+            self.mps = mps
+            self.statevector = self.to_statevector(mps)
+
+        else:
+            raise ValueError("Must provide either `statevector` or `mps`.")
+
         # Define the maximum bond dimension
         self.bond_dimension = bond_dimension
-        # Define the MPS from the statevector
-        self.mps = self.define_mps(statevector)
+
         # Define the number of sites for the MPS
-        self.num_sites = self.mps.L
+        self.num_sites = self.statevector.num_qubits
+
         # Define the physical dimension of the MPS
         if self.mps.phys_dim() != 2:
-            raise ValueError("Only supports MPS with physical dimesnion=2.")
+            raise ValueError("Only supports MPS with physical dimension=2.")
         else:
             self.physical_dimension = 2
 
-    def define_mps(self,
-                   statevector: Data) -> qtn.MatrixProductState:
+    @staticmethod
+    def from_statevector(statevector: Data,
+                         max_bond_dimension: int) -> qtn.MatrixProductState:
         """ Define the MPS from the statevector.
 
         Parameters
@@ -113,70 +132,107 @@ class MPS:
 
         Returns
         -------
-        qtn.MatrixProductState
+        `mps` : qtn.MatrixProductState
             The MPS of the quantum system.
         """
+        # Define the number of sites
+        num_sites = statevector.num_qubits
+
         # Reshape the vector to N sites where N is the number of qubits
         # needed to represent the state vector
-        dims = [2] * int(np.log2(len(statevector)))
+        site_dimensions = [2] * num_sites
 
-        # TODO: This should be defined using C language
         # Generate MPS from the tensor arrays
-        mps = qtn.MatrixProductState.from_dense(statevector, dims)
+        mps = qtn.MatrixProductState.from_dense(statevector, site_dimensions)
 
-        # TODO: This should be defined using C language
-        # Compress the bond dimension of the MPS to the maximum bond dimension
-        for i in range(int(mps.L)-1):
-            qtn.tensor_core.tensor_compress_bond(mps[i], mps[i+1], max_bond = self.bond_dimension)
+        # Compress the bond dimension of the MPS to the maximum bond dimension specified
+        for i in range(num_sites-1):
+            qtn.tensor_core.tensor_compress_bond(mps[i], mps[i+1], max_bond = max_bond_dimension)
 
-        # Return the MPS
         return mps
+
+    @staticmethod
+    def to_statevector(mps: qtn.MatrixProductState) -> Data:
+        """ Convert the MPS to a statevector.
+
+        Parameters
+        ----------
+        `mps` : qtn.MatrixProductState
+            The matrix product state (MPS) of the quantum system.
+
+        Returns
+        -------
+        `statevector` : qickit.data.Data
+            The statevector of the quantum system.
+        """
+        # Define the statevector from the MPS using `.to_dense()` method
+        statevector = Data(mps.to_dense())
+
+        # Convert the statevector to a quantum state
+        statevector.to_quantumstate()
+
+        return statevector
 
     def normalize(self) -> None:
         """ Normalize the MPS.
         """
-        # TODO: This should be defined using C language
-        # Normalize the MPS
         self.mps.normalize()
 
-    def canonize(self,
-                 mode: str) -> None:
-        """ Canonize the MPS.
+    def canonicalize(self,
+                     mode: str,
+                     normalize=False) -> None:
+        """ Canonicalize the MPS with the specified mode.
 
         Parameters
         ----------
         `mode` : str
-            The mode of canonization, either "left" or "right".
+            The mode of canonicalization, either "left" or "right".
+        `normalize` : bool, optional
+            Whether to normalize the state. This is different from the `.normalize()` method.
 
         Raises
         ------
         ValueError
             If `mode` is not "left" or "right".
         """
-        # TODO: This should be defined using C language
         if mode == "left":
-            self.mps.left_canonize()
+            self.mps.left_canonize(normalize=normalize)
         elif mode == "right":
-            self.mps.right_canonize()
+            self.mps.right_canonize(normalize=normalize)
         else:
             raise ValueError("`mode` must be either 'left' or 'right'.")
 
     def compress(self,
-                 max_bond_dimension: int) -> None:
+                 max_bond_dimension: int,
+                 mode="") -> None:
         """ Compress the bond dimension of the MPS.
 
         Parameters
         ----------
         `max_bond_dimension` : int
             The maximum bond dimension of the MPS.
-        `mode` : str UNIMPLEMENTED
-            The mode of compression, either "left" or "right".
+        `mode` : str, optional
+            The mode of compression, either "left", "right", or "flat".
+
+        Raises
+        ------
+        TypeError
+            If `max_bond_dimension` is not an integer.
+        ValueError
+            If `mode` is not "left", "right", or "flat".
         """
-        # TODO: Check the difference between :func:`qtn.tensor_core.tensor_compress_bond()` and :func:`qtn.compress()`. ref: sequential.py, line: 93
-        # qtn.compress() is for 2D tensor networks. For 1D, use qtn.tensor_core.tensor_compress_bond()
-        # TODO: This should be defined using C language
-        for i in range(int(self.mps.L)-1):
-            qtn.tensor_core.tensor_compress_bond(self.mps[i], self.mps[i+1], max_bond = max_bond_dimension)
+        if not isinstance(max_bond_dimension, int):
+            raise TypeError("`max_bond_dimension` must be an integer.")
+
+        # If `mode` is specified, compress the MPS with the specified mode
+        if mode == "":
+            for i in range(self.num_sites-1):
+                qtn.tensor_core.tensor_compress_bond(self.mps[i], self.mps[i+1], max_bond = max_bond_dimension)
+        else:
+            if mode in ["left", "right", "flat"]:
+                self.mps.compress(form=mode, max_bond=max_bond_dimension)
+            else:
+                raise ValueError(f"`mode` must be either 'left', 'right', or 'flat'. Received {mode}.")
 
     def contract(self,
                  indices: Collection[int]) -> None:
@@ -186,8 +242,19 @@ class MPS:
         ----------
         `indices` : Collection[int]
             The indices to contract.
+
+        Raises
+        ------
+        TypeError
+            If `indices` is not a collection of integers.
+        TypeError
+            If any element of `indices` is not an integer.
         """
-        # TODO: This must be defined using C language (main bottleneck)
+        if not isinstance(indices, Collection):
+            raise TypeError("`indices` must be a collection of integers.")
+        elif not all(isinstance(index, int) for index in indices):
+            raise TypeError("All elements of `indices` must be integers.")
+
         self.mps.contract_ind(indices)
 
     def permute(self,
@@ -198,9 +265,16 @@ class MPS:
         ----------
         `shape` : str
             The shape to permute, being "lrp" or "lpr".
+
+        Raises
+        ------
+        ValueError
+            If `shape` is not "lrp" or "lpr".
         """
-        # TODO: This should be defined using C language
-        self.mps.permute_arrays(shape)
+        if shape in ["lrp", "lpr"]:
+            self.mps.permute_arrays(shape)
+        else:
+            raise ValueError(f"`shape` must be either 'lrp' or 'lpr'. Received {shape}.")
 
     def change_indexing(self,
                         index_type: str) -> None:
@@ -209,102 +283,96 @@ class MPS:
         Parameters
         ----------
         `index_type` : str
-            The indexing type for the statevector.
+            The indexing type for the statevector, being "row" or "snake".
         """
         # Change the indexing of the statevector
         self.statevector.change_indexing(index_type)
 
         # Update the MPS definition
-        self.mps = self.define_mps(self.statevector)
+        self.mps = MPS.from_statevector(self.statevector, self.bond_dimension)
 
-    def get_submps_indices(self) -> list:
-        """ Get the indices of the sub-MPSs.
+    # TODO: Redo the comments for better clarity.
+    def get_submps_indices(self) -> list[tuple[int, int]]:
+        """ Get the indices of the tensors at each site of the MPS.
 
         Returns
         -------
-        `submps_indices` (list): The indices of the sub-MPSs.
+        `submps_indices` : (list[tuple[int, int]])
+            The indices of the MPS tensors.
         """
-        # Initialize sub MPS indices
+        # Initialize the indices of the tensors at each site of the MPS
         submps_indices = []
 
-        # Define the number of sites
-        num_sites = self.mps.L
+        # If the MPS only has one site, add the (0, 0) coordinate to the sub MPS indices
+        if self.num_sites == 1:
+            return [(0, 0)]
 
-        # If the MPS only has one site
-        if num_sites == 1:
-            # Add the (0, 0) coordinate to the sub MPS indices
-            submps_indices.append([0, 0])
+        # Otherwise, iterate over the sites of the MPS to define the left (first) and right (last)
+        # sites' dimensions
+        for site in range(self.num_sites):
+            # Initialize the dimension for the first and last sites
+            dim_left, dim_right = 1, 1
 
-        else:
-            # Iterate over the sites of the MPS
-            for site in range(num_sites):
-                # Initialize the dimension for the left and right sides
-                # of the site
-                dim_left, dim_right = 1, 1
+            # If this is the first site, then only define the right dimension
+            if site == 0:
+                _, dim_right = self.mps[site].shape
 
-                # If this is the first site, then only define the right dimension
-                if site == 0:
-                    _, dim_right = self.mps[site].shape
+            # If this is the last site, then only define the left dimension
+            elif site == (self.num_sites - 1):
+                dim_left, _ = self.mps[site].shape
 
-                # If this is the last site, then only define the left dimension
-                elif site == (num_sites - 1):
-                    dim_left, _ = self.mps[site].shape
+            # Otherwise, define both the left and right dimensions for the intermediate sites
+            else:
+                dim_left, _, dim_right = self.mps[site].shape
 
-                # Otherwise, define both the left and right dimensions
-                else:
-                    dim_left, _, dim_right = self.mps[site].shape
+            # If the left and right dimensions are both less than 2,
+            # then add the (site, site) coordinate to the sub MPS indices
+            if dim_left < 2 and dim_right < 2:
+                submps_indices.append((site, site))
 
-                # If the left and right dimensions are both less than 2,
-                # then add the (site, site) coordinate to the sub MPS indices
-                if dim_left < 2 and dim_right < 2:
-                    submps_indices.append([site, site])
+            # If the left dimension is less than 2 and the right dimension
+            # is greater than or equal to 2, then set the temp variable to the site
+            elif dim_left < 2 and dim_right >= 2:
+                temp = site
 
-                # If the left dimension is less than 2 and the right dimension
-                # is greater than or equal to 2, then set the temp variable to the site
-                elif dim_left < 2 and dim_right >= 2:
-                    temp = site
+            # If the left dimension is greater than or equal to 2 and the right dimension
+            # is less than 2, then add the (temp, site) coordinate to the sub MPS indices
+            elif dim_left >= 2 and dim_right < 2:
+                submps_indices.append((temp, site))
 
-                # If the left dimension is greater than or equal to 2 and the right dimension
-                # is less than 2, then add the (temp, site) coordinate to the sub MPS indices
-                elif dim_left >= 2 and dim_right < 2:
-                    submps_indices.append([temp, site])
-
-        # Return the sub MPS indices
         return submps_indices
-    
 
+    # TODO: Redo the comments for better clarity.
+    # TODO: Consider breaking the method into smaller methods, for generating the isometries, kernels, and unitaries.
     def generate_unitaries(self) -> list:
-        """ Generate the unitaries for the bond-d compression of the MPS.
-
-        Parameters
-        ----------
-        `mps` (qtn.MatrixProductState):
-            The MPS to be compressed.
+        """ Generate the unitaries of the MPS.
 
         Returns
         -------
-        `generated_unitary_list` (list): A list of unitaries to be applied to the MPS.
+        `generated_unitary_list` : list
+            A list of unitaries to be applied to the MPS.
         """
         # Define the physical dimension of the MPS
-        phy_dim = self.mps.phys_dim()
+        phy_dim = self.physical_dimension
 
         # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = self.mps.copy(deep=True)
+        mps_copy = copy.deepcopy(self.mps)
 
         # Initialize the list of generated unitaries
         generated_unitary_list = []
 
-        # Get the indices of the sub-MPSs
-        sub_mps_indices = self.get_submps_indices(mps_copy)
+        # Get the indices of the MPS tensors
+        sub_mps_indices = self.get_submps_indices()
 
-        # Iterate over the sub-MPSs starting and ending indices
+        # Iterate over the tensors' starting and ending indices
         for start_index, end_index in sub_mps_indices:
-            # Initialize the generated unitaries, isometries, and kernels lists
-            generated_unitaries, isomsetries, kernels = [], [], []
+            # Initialize the generated unitaries, isometries, and kernels
+            generated_unitaries: list = []
+            isomsetries: list = []
+            kernels: list = []
 
-            # Iterate over the indices of the sub-MPS
+            # Iterate over the indices of the tensor
             for index in range(start_index, end_index + 1):
-                # If the index is the end index of the sub-MPS
                 if index == (end_index):
                     # If the sub-MPS has only one site
                     if (end_index - start_index) == 0:
@@ -318,7 +386,7 @@ class MPS:
                         # specified index
                         unitary[1, :] = linalg.null_space(mps_copy[index].data.reshape(1, -1).conj()).reshape(1, -1)
 
-                    # If the sub-MPS has more than one site, the unitary is the data at the specified
+                    # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified
                     # site
                     else:
                         unitary = mps_copy[index].data
@@ -340,11 +408,11 @@ class MPS:
                     # Initialize the unitary with 0s
                     unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
 
-                    # Set the first row of the unitary to the data of the MPS at the specified index
+                    # Set the first row of the unitary to the MPS tensor at the specified site
                     unitary[0, :, :, :] = mps_copy[index].data
 
-                    # Set the second row of the unitary to the null space of the data of the MPS at the
-                    # specified index
+                    # Set the second row of the unitary to the null space of the MPS tensor at the
+                    # specified site
                     kernel = linalg.null_space(mps_copy[index].data.reshape((phy_dim, -1)).conj())
 
                     # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
@@ -353,7 +421,6 @@ class MPS:
                         (3, 2, 0, 1)
                     )
 
-                    # # CHECK IF REQUIRED
                     # Transpose the unitary, such that the indices of the unitary are ordered
                     # as unitary(L,B,T,R)
                     unitary = unitary.transpose((0, 1, 3, 2))
@@ -370,7 +437,7 @@ class MPS:
                     generated_unitaries.append(unitary)
 
                     # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-                    unitary = unitary.data.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim)
+                    unitary = unitary.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim)
 
                     # Get the kernel from the unitary
                     kernel = unitary[:, 1, :, :].reshape(2, 4).T
@@ -415,8 +482,6 @@ class MPS:
                             # Set the unitary at the specified index to the kernel at the specified index
                             unitary[i, j, :, :] = kernel[:, index - 1].reshape((phy_dim, phy_dim))
 
-                    
-                    # # CHECK if required
                     # Transpose the unitary, such that the indices of the unitary are ordered
                     # as unitary(L,B,T,R)
                     unitary = unitary.transpose((0, 1, 3, 2))
@@ -433,13 +498,12 @@ class MPS:
                     generated_unitaries.append(unitary)
 
                     # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-                    unitary = unitary.data.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim))
+                    unitary = unitary.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim))
 
                     # Get the kernel from the unitary
                     kernel = unitary[:, 1, :, :].reshape(2, 4).T
                     kernel = np.c_[unitary[1, 0, :, :].reshape(1, 4).T, kernel]
 
-                    # Is scipy better or numpy?
                     # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
                     [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
 
@@ -455,37 +519,27 @@ class MPS:
             # Append the start index, end index, generated unitaries, isometries, and kernels to the
             generated_unitary_list.append([start_index, end_index, generated_unitaries, isomsetries, kernels])
 
-        # Return the generated unitary list
         return generated_unitary_list
 
-    # CHECKED
-    def generate_bond_d_unitary(self,
-                                mps: qtn.MatrixProductState) -> list:
+    # TODO: Redo the comments for better clarity.
+    def generate_bond_d_unitary(self) -> list:
         """ Generate the unitary for the bond-d compression of the MPS.
-
-        Parameters
-        ----------
-        `mps` (qtn.MatrixProductState):
-            The MPS to be compressed.
 
         Returns
         -------
-        `generated_unitary_list` (list): A list of unitaries to be applied to the MPS.
+        `generated_unitary_list` : list
+            A list of unitaries to be applied to the MPS.
         """
-        # Define the physical dimension of the MPS
-        phy_dim = self.mps.phys_dim()
+        # Copy the MPS (as the MPS will be modified in place with `.compress` and `.canonicalize` methods)
+        mps_copy = copy.deepcopy(self)
 
-        # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = self.mps.copy(deep=True)
+        # Compress the MPS to a bond dimension of the physical dimension of the MPS
+        mps_copy.compress(self.physical_dimension)
 
-        # Compress the MPS to a bond dimension of phy_dim
-        mps_copy.compress(max_bond=phy_dim)
-
-        # Right canonize the compressed MPS
-        mps_copy.canonize(mode = 'right')
+        # Right canonicalize the compressed MPS
+        mps_copy.canonicalize('right')
 
         # Generate the unitaries
-        generated_unitary_list = self.generate_unitaries(mps_copy)
+        generated_unitary_list = mps_copy.generate_unitaries()
 
-        # Return the generated unitary list
         return generated_unitary_list
