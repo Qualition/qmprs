@@ -613,3 +613,102 @@ class MPS:
         generated_unitary_list = mps_copy.generate_unitaries()
 
         return generated_unitary_list
+    
+    # DO we want these functions to return the MPS or inplace unitary transformation is okay?
+    def apply_unitary_layer_on_wfn(self, 
+                                   generated_unitary_list: list):
+        """ Apply the unitary layer on the MPS.
+
+        Parameters
+        ----------
+        `generated_unitary_list` (list):
+            A list of unitaries to be applied to the MPS.
+
+        """
+        # Copy the MPS (as the MPS will be modified in place)
+        mps_copy = copy.deepcopy(self.mps)
+
+        # Iterate over the generated unitary list and the start and end indices
+        for start_index, end_index, generated_unitaries, _, _ in generated_unitary_list:
+            # Iterate over the indices of the MPS
+            for index in range(start_index, end_index + 1):
+                # If the index is the end index
+                if index == end_index:
+                    # Add the generated unitary gates to the MPS
+                    mps_copy.gate_(generated_unitaries[index - start_index].data, where=[index])
+
+                    # Define the location
+                    loc = np.where([isinstance(mps_copy[site], tuple) for site in range(mps_copy.L)])[0][0]
+
+                    # Contract the index
+                    mps_copy.contract_ind(mps_copy[loc][-1].inds[-1])
+
+                # Otherwise
+                else:
+                    # Split the MPS at the specified index
+                    mps_copy = mps_copy.gate_split(generated_unitaries[index - start_index].data, where=[index, index + 1])
+
+        # Permute the arrays of the MPS
+        mps_copy.permute_arrays(shape="lpr")
+
+        # Compress the MPS
+        mps_copy.compress("right")
+
+        # # Return the MPS
+        # return mps_copy
+
+    def apply_unitary_layers_on_wfn(self,
+                                    unitary_layers: list):
+        """ Apply the unitary layers on the MPS.
+
+        Parameters
+        ----------
+        `unitary_layers` (list):
+            A list of unitaries to be applied to the MPS.
+        """
+        # Iterate over the unitary layers in reverse order
+        for layer in reversed(range(len(unitary_layers))):
+            # Apply the unitary layer on the MPS inplace
+            self.apply_unitary_layer_on_wfn(unitary_layers[layer])
+
+        # # Return the MPS
+        # return mps_copy
+
+    def apply_inverse_unitary_layer_on_wfn(self,
+                                           generated_unitary_list: list):
+        """ Apply the inverse unitary layer on the MPS.
+
+        Parameters
+        ----------
+        `generated_unitary_list` (list):
+            A list of unitaries to be applied to the MPS.
+
+        """
+        # Copy the MPS (as the MPS will be modified in place)
+        mps_copy = copy.deepcopy(self.mps)
+
+        # Iterate over the generated unitary list and the start and end indices
+        for start_index, end_index, generate_unitaries, _, _ in generated_unitary_list:
+            # Iterate over the indices of the MPS in reverse order
+            for index in list(reversed(range(start_index, end_index + 1))):
+                # If the index is the end index
+                if index == end_index:
+                    # Add the generated unitary gates to the MPS
+                    mps_copy.gate_(generate_unitaries[index - start_index].data.conj().T, where=[index])
+
+                    # Define the location
+                    loc = np.where([isinstance(mps_copy[jt], tuple) for jt in range(mps_copy.L)])[0][0]
+
+                    # Contract the index
+                    mps_copy.contract_ind(mps_copy[loc][-1].inds[-1])
+
+                # Otherwise
+                else:
+                    # Split the MPS at the specified index
+                    mps_copy = mps_copy.gate_split(generate_unitaries[index - start_index].data.conj().T, where=[index, index + 1])
+
+        # Permute the arrays of the MPS
+        mps_copy.permute_arrays(shape="lpr")
+
+        # # Compress the MPS
+        # return mps_copy
