@@ -342,9 +342,7 @@ class MPS:
 
         return submps_indices
 
-    # TODO: Redo the comments for better clarity.
-    # TODO: Consider breaking the method into smaller methods, for generating the isometries, kernels, and unitaries.
-    def generate_unitaries(self) -> list:
+    def generate_unitaries(self):
         """ Generate the unitaries of the MPS.
 
         Returns
@@ -366,161 +364,233 @@ class MPS:
 
         # Iterate over the tensors' starting and ending indices
         for start_index, end_index in sub_mps_indices:
-            # Initialize the generated unitaries, isometries, and kernels
-            generated_unitaries: list = []
-            isomsetries: list = []
-            kernels: list = []
+            
+            # Initialize lists to store generated unitaries, isometries, and kernels
+            generated_unitaries, isomsetries, kernels = [], [], []
 
-            # Iterate over the indices of the tensor
+            # Iterate over the range from start_index to end_index (inclusive)
             for index in range(start_index, end_index + 1):
-                if index == (end_index):
-                    # If the sub-MPS has only one site
-                    if (end_index - start_index) == 0:
-                        # Initialize the unitary with 0s
-                        unitary = np.zeros((phy_dim, phy_dim), dtype=np.complex128)
 
-                        # Set the first row of the unitary to the data of the MPS at the specified index
-                        unitary[0, :] = mps_copy[index].data.reshape((1, -1))
-
-                        # Set the second row of the unitary to the null space of the data of the MPS at the
-                        # specified index
-                        unitary[1, :] = linalg.null_space(mps_copy[index].data.reshape(1, -1).conj()).reshape(1, -1)
-
-                    # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified
-                    # site
-                    else:
-                        unitary = mps_copy[index].data
-
-                    # Convert the unitary to a qtn.Tensor
-                    # .T at the end is useful for the application of unitaries as quantum circuit
-                    unitary = qtn.Tensor(unitary.reshape((phy_dim, phy_dim)).T, inds=("v", "p"), tags={"G"})
-
-                    # Append the unitary to the list of generated unitaries
-                    generated_unitaries.append(unitary)
-
-                    # Append the blank isometries and kernels to the lists (this is to ensure same length
-                    # as the generated unitaries)
-                    isomsetries.append([])
-                    kernels.append([])
-
-                # If the index is not the start index of the sub-MPS
+                if index == end_index:
+                    # Generate a single site unitary for the current tensor
+                    self._generate_single_site_unitary(mps_copy[index].data, start_index, end_index, generated_unitaries, isomsetries, kernels)
+                    
                 elif index != start_index:
-                    # Initialize the unitary with 0s
-                    unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
+                    # Generate a two site unitary for the current tensor
+                    self._generate_two_site_unitary(mps_copy[index].data, generated_unitaries, isomsetries, kernels)
+                
+                else:
+                    # Generate a first site unitary for the current tensor
+                    self._generate_first_site_unitary(mps_copy[index].data, generated_unitaries, isomsetries, kernels)
 
-                    # Set the first row of the unitary to the MPS tensor at the specified site
-                    unitary[0, :, :, :] = mps_copy[index].data
-
-                    # Set the second row of the unitary to the null space of the MPS tensor at the
-                    # specified site
-                    kernel = linalg.null_space(mps_copy[index].data.reshape((phy_dim, -1)).conj())
-
-                    # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
-                    kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
-                    unitary[1:phy_dim, :, :, :] = kernel.reshape((phy_dim, phy_dim, phy_dim, phy_dim - 1)).transpose(
-                        (3, 2, 0, 1)
-                    )
-
-                    # Transpose the unitary, such that the indices of the unitary are ordered
-                    # as unitary(L,B,T,R)
-                    unitary = unitary.transpose((0, 1, 3, 2))
-
-                    # Transpose the unitary, such that the indices of the unitary are ordered
-                    # as unitary(B,L,R,T)
-                    unitary = unitary.transpose((1, 0, 3, 2))
-
-                    # Convert the unitary to a qtn.Tensor
-                    # .T at the end is useful for the application of unitaries as quantum circuit
-                    unitary = qtn.Tensor(unitary.reshape((phy_dim**2, phy_dim**2)).T, inds=["L", "R"], tags={"G"})
-
-                    # Append the unitary to the list of generated unitaries
-                    generated_unitaries.append(unitary)
-
-                    # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-                    unitary = unitary.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim)
-
-                    # Get the kernel from the unitary
-                    kernel = unitary[:, 1, :, :].reshape(2, 4).T
-
-                    # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
-                    kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
-
-                    # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
-                    [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
-
-                    # Define the isometry from the eigenvectors and their corresponding eigenvalues
-                    isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
-
-                    # Append the isometry to the list of isometries
-                    isomsetries.append(isometry)
-
-                    # Append the kernel to the list of kernels
-                    kernels.append(kernel)
-
-                # If the index is the start index of the sub-MPS
-                elif index == start_index:
-                    # Initialize the unitary with 0s
-                    unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
-
-                    # Set the first row of the unitary to the data of the MPS at the specified index
-                    unitary[0, 0, :, :] = mps_copy[index].data.reshape((phy_dim, -1))
-
-                    # Get the kernel from the data of the MPS at the specified index
-                    kernel = linalg.null_space(mps_copy[index].data.reshape((1, -1)).conj())
-
-                    # Iterate over the physical dimension
-                    for i in range(phy_dim):
-                        # Iterate over the physical dimension
-                        for j in range(phy_dim):
-                            # If the indices are both 0, continue
-                            if i == 0 and j == 0:
-                                continue
-
-                            # Define the index
-                            index = i * phy_dim + j
-
-                            # Set the unitary at the specified index to the kernel at the specified index
-                            unitary[i, j, :, :] = kernel[:, index - 1].reshape((phy_dim, phy_dim))
-
-                    # Transpose the unitary, such that the indices of the unitary are ordered
-                    # as unitary(L,B,T,R)
-                    unitary = unitary.transpose((0, 1, 3, 2))
-
-                    # Transpose the unitary, such that the indices of the unitary are ordered
-                    # as unitary(B,L,R,T)
-                    unitary = unitary.transpose((1, 0, 3, 2))
-
-                    # Convert the unitary to a qtn.Tensor
-                    # .T at the end is useful for the application of unitaries as quantum circuit
-                    unitary = qtn.Tensor(unitary.reshape((phy_dim**2, phy_dim**2)).T, inds=["L", "R"], tags={"G"})
-
-                    # Append the unitary to the list of generated unitaries
-                    generated_unitaries.append(unitary)
-
-                    # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-                    unitary = unitary.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim))
-
-                    # Get the kernel from the unitary
-                    kernel = unitary[:, 1, :, :].reshape(2, 4).T
-                    kernel = np.c_[unitary[1, 0, :, :].reshape(1, 4).T, kernel]
-
-                    # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
-                    [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
-
-                    # Define the isometry from the eigenvectors and their corresponding eigenvalues
-                    isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
-
-                    # Append the isometry to the list of isometries
-                    isomsetries.append(isometry)
-
-                    # Append the kernel to the list of kernels
-                    kernels.append(kernel)
-
-            # Append the start index, end index, generated unitaries, isometries, and kernels to the
+            # Append the start_index, end_index, generated unitaries, isometries, and kernels to the list of generated unitaries
             generated_unitary_list.append([start_index, end_index, generated_unitaries, isomsetries, kernels])
 
+        # Return the list of generated unitaries
         return generated_unitary_list
 
+
+    def _generate_single_site_unitary(self,
+                                      mps_copy_data: np.ndarray,
+                                      start_index: int,
+                                      end_index: int,
+                                      generated_unitaries: list[qtn.Tensor],
+                                      isomsetries: list[list],
+                                      kernels: list[list]) -> None:
+        """
+        Generates a single site unitary for a given tensor in the MPS.
+
+        Parameters
+        ----------
+        mps_copy_data : np.ndarray
+            The data of the MPS tensor at the specified index.
+        start_index : int
+            The starting index of the sub-MPS.
+        end_index : int
+            The ending index of the sub-MPS.
+        generated_unitaries : List[qtn.Tensor]
+            The list of generated unitaries.
+        isomsetries : List[List]
+            The list of isometries.
+        kernels : List[List]
+            The list of kernels.
+        """
+        # Define the physical dimension of the MPS
+        phy_dim = self.physical_dimension
+
+        # Check if the sub-MPS has only one site
+        if end_index == start_index:
+            # Initialize the unitary with 0s
+            unitary = np.zeros((phy_dim, phy_dim), dtype=np.complex128)
+
+            # Set the first row of the unitary to the data of the MPS at the specified index
+            unitary[0, :] = mps_copy_data.reshape((1, -1))
+
+            # Set the second row of the unitary to the null space of the data of the MPS at the specified index
+            unitary[1, :] = linalg.null_space(mps_copy_data.reshape(1, -1).conj()).reshape(1, -1)
+        else:
+            # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified site
+            unitary = mps_copy_data
+
+        # Convert the unitary to a qtn.Tensor
+        # .T at the end is useful for the application of unitaries as quantum circuit
+        unitary = qtn.Tensor(unitary.reshape((phy_dim, phy_dim)).T, inds=("v", "p"), tags={"G"})
+
+        # Append the unitary to the list of generated unitaries
+        generated_unitaries.append(unitary)
+
+        # Append the blank isometries and kernels to the lists (this is to ensure same length as the generated unitaries)
+        isomsetries.append([])
+        kernels.append([])
+
+    def _generate_two_site_unitary(self,
+                                mps_copy_data: np.ndarray,
+                                generated_unitaries: list[qtn.Tensor],
+                                isomsetries: list[np.ndarray],
+                                kernels: list[np.ndarray]) -> None:
+        """
+        Generates a two site unitary for a given tensor in the MPS.
+
+        Parameters
+        ----------
+        mps_copy_data : np.ndarray
+            The data of the MPS tensor at the specified index.
+        generated_unitaries : List[qtn.Tensor]
+            The list of generated unitaries.
+        isomsetries : List[np.ndarray]
+            The list of isometries.
+        kernels : List[np.ndarray]
+            The list of kernels.
+        """
+        # Define the physical dimension of the MPS
+        phy_dim = self.physical_dimension
+
+        # Initialize the unitary with 0s
+        unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
+
+        # Set the first row of the unitary to the MPS tensor at the specified site
+        unitary[0, :, :, :] = mps_copy_data
+
+        # Set the second row of the unitary to the null space of the MPS tensor at the specified site
+        kernel = linalg.null_space(mps_copy_data.reshape((phy_dim, -1)).conj())
+
+        # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
+        kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
+        unitary[1:phy_dim, :, :, :] = kernel.reshape((phy_dim, phy_dim, phy_dim, phy_dim - 1)).transpose((3, 2, 0, 1))
+
+        # Transpose the unitary, such that the indices of the unitary are ordered as unitary(L,B,T,R)
+        unitary = unitary.transpose((0, 1, 3, 2))
+
+        # Transpose the unitary, such that the indices of the unitary are ordered as unitary(B,L,R,T)
+        unitary = unitary.transpose((1, 0, 3, 2))
+
+        # Convert the unitary to a qtn.Tensor
+        # .T at the end is useful for the application of unitaries as quantum circuit
+        unitary = qtn.Tensor(unitary.reshape((phy_dim**2, phy_dim**2)).T, inds=["L", "R"], tags={"G"})
+
+        # Append the unitary to the list of generated unitaries
+        generated_unitaries.append(unitary)
+
+        # Reshape the unitary to (d x d x d x d) where d is the physical dimension
+        unitary = unitary.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim)
+
+        # Get the kernel from the unitary
+        kernel = unitary[:, 1, :, :].reshape(2, 4).T
+
+        # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
+        kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
+
+        # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
+        [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
+
+        # Define the isometry from the eigenvectors and their corresponding eigenvalues
+        isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
+
+        # Append the isometry to the list of isometries
+        isomsetries.append(isometry)
+
+        # Append the kernel to the list of kernels
+        kernels.append(kernel)
+
+    def _generate_first_site_unitary(self,
+                                    mps_copy_data: np.ndarray,
+                                    generated_unitaries: list[qtn.Tensor],
+                                    isomsetries: list[np.ndarray],
+                                    kernels: list[np.ndarray]) -> None:
+        """
+        Generates a first site unitary for a given tensor in the MPS.
+
+        Parameters
+        ----------
+        mps_copy_data : np.ndarray
+            The data of the MPS tensor at the specified index.
+        generated_unitaries : List[qtn.Tensor]
+            The list of generated unitaries.
+        isomsetries : List[np.ndarray]
+            The list of isometries.
+        kernels : List[np.ndarray]
+            The list of kernels.
+        """
+        # Define the physical dimension of the MPS
+        phy_dim = self.physical_dimension
+
+        # Initialize the unitary with 0s
+        unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
+
+        # Set the first row of the unitary to the data of the MPS at the specified index
+        unitary[0, 0, :, :] = mps_copy_data.reshape((phy_dim, -1))
+
+        # Get the kernel from the data of the MPS at the specified index
+        kernel = linalg.null_space(mps_copy_data.reshape((1, -1)).conj())
+
+        # Iterate over the physical dimension
+        for i in range(phy_dim):
+            # Iterate over the physical dimension
+            for j in range(phy_dim):
+                # If the indices are both 0, continue
+                if i == 0 and j == 0:
+                    continue
+
+                # Define the index
+                index = i * phy_dim + j
+
+                # Set the unitary at the specified index to the kernel at the specified index
+                unitary[i, j, :, :] = kernel[:, index - 1].reshape((phy_dim, phy_dim))
+
+        # Transpose the unitary, such that the indices of the unitary are ordered as unitary(L,B,T,R)
+        unitary = unitary.transpose((0, 1, 3, 2))
+
+        # Transpose the unitary, such that the indices of the unitary are ordered as unitary(B,L,R,T)
+        unitary = unitary.transpose((1, 0, 3, 2))
+
+        # Convert the unitary to a qtn.Tensor
+        # .T at the end is useful for the application of unitaries as quantum circuit
+        unitary = qtn.Tensor(unitary.reshape((phy_dim**2, phy_dim**2)).T, inds=["L", "R"], tags={"G"})
+
+        # Append the unitary to the list of generated unitaries
+        generated_unitaries.append(unitary)
+
+        # Reshape the unitary to (d x d x d x d) where d is the physical dimension
+        unitary = unitary.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim))
+
+        # Get the kernel from the unitary
+        kernel = unitary[:, 1, :, :].reshape(2, 4).T
+        kernel = np.c_[unitary[1, 0, :, :].reshape(1, 4).T, kernel]
+
+        # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
+        [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
+
+        # Define the isometry from the eigenvectors and their corresponding eigenvalues
+        isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
+
+        # Append the isometry to the list of isometries
+        isomsetries.append(isometry)
+
+        # Append the kernel to the list of kernels
+        kernels.append(kernel)
+
+    
+    
     # TODO: Redo the comments for better clarity.
     def generate_bond_d_unitary(self) -> list:
         """ Generate the unitary for the bond-d compression of the MPS.
