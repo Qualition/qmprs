@@ -18,9 +18,10 @@ __all__ = ['MPS']
 
 import copy
 import numpy as np
+from numpy.typing import NDArray
 import quimb.tensor as qtn # type: ignore
 from scipy import linalg # type: ignore
-from typing import Optional, Union
+from typing import Union
 
 # Import `qickit.data.Data`
 from qickit.data import Data # type: ignore
@@ -33,6 +34,7 @@ NumberType = int | float | complex
 
 
 # TODO: Confirm all methods and attributes needed for MPS support
+# TODO: Add string diagrams for visual documentation where possible
 class MPS:
     """ `qmprs.mps.MPS` is the class for creating and manipulating matrix product states (MPS).
 
@@ -76,9 +78,9 @@ class MPS:
     >>> mps = MPS(statevector, bond_dimension)
     """
     def __init__(self,
-                 statevector: Optional[Union[Data, NestedCollection[NumberType]]],
-                 mps: Optional[qtn.MatrixProductState],
-                 bond_dimension: int) -> None:
+                 statevector: Union[Data, NestedCollection[NumberType]] | None = None,
+                 mps: qtn.MatrixProductState | None = None,
+                 bond_dimension: int = 64) -> None:
         """ Initialize a `qmprs.mps.MPS` instance. Pass only `statevector` to define
         the MPS from the statevector. Pass only `mps` to define the MPS from the MPS.
         """
@@ -143,7 +145,7 @@ class MPS:
         site_dimensions = [2] * num_sites
 
         # Generate MPS from the tensor arrays
-        mps = qtn.MatrixProductState.from_dense(statevector, site_dimensions)
+        mps = qtn.MatrixProductState.from_dense(statevector.data, site_dimensions)
 
         # Compress the bond dimension of the MPS to the maximum bond dimension specified
         for i in range(num_sites-1):
@@ -181,7 +183,23 @@ class MPS:
     def canonicalize(self,
                      mode: str,
                      normalize=False) -> None:
-        """ Canonicalize the MPS with the specified mode.
+        """ Canonicalize the MPS with the specified mode. This states how the singular values from
+        the SVD are absorbed into the left or right tensors.
+        - If `mode` is "left", the singular values are absorbed into the tensors to their
+        right. (all tensors contract to unit matrix from left)
+
+                          i              i
+            >->->->->->->-o-o-         +-o-o-
+            | | | | | | | | | ...  =>  | | | ...
+            >->->->->->->-o-o-         +-o-o-
+
+        - If `mode` is "right", the singular values are absorbed into the tensors to their
+        left. (all tensors contract to unit matrix from right)
+
+                   i                           i
+                -o-o-<-<-<-<-<-<-<          -o-o-+
+             ... | | | | | | | | |   ->  ... | | |
+                -o-o-<-<-<-<-<-<-<          -o-o-+
 
         Parameters
         ----------
@@ -203,9 +221,21 @@ class MPS:
             raise ValueError("`mode` must be either 'left' or 'right'.")
 
     def compress(self,
-                 max_bond_dimension: int,
-                 mode="") -> None:
+                 max_bond_dimension: int | None = None,
+                 mode: str | None = None) -> None:
         """ Compress the bond dimension of the MPS.
+
+         a)│   │        b)│        │        c)│       │
+         ━━●━━━●━━  ->  ━━>━━○━━○━━<━━  ->  ━━>━━━M━━━<━━
+           │   │          │  ....  │          │       │
+          <*> <*>          contract              <*>
+          QR   LQ            -><-                SVD
+
+            d)│            │        e)│   │
+        ->  ━━>━━━ML──MR━━━<━━  ->  ━━●───●━━
+              │....    ....│          │   │
+            contract  contract          ^compressed bond
+               -><-      -><-
 
         Parameters
         ----------
@@ -219,24 +249,30 @@ class MPS:
         TypeError
             If `max_bond_dimension` is not an integer.
         ValueError
+            If `max_bond_dimension` is not specified and `mode` is not specified.
             If `mode` is not "left", "right", or "flat".
         """
+        if not (max_bond_dimension and mode):
+            raise ValueError("At least `max_bond_dimension` or `mode` must be specified.")
         if not isinstance(max_bond_dimension, int):
             raise TypeError("`max_bond_dimension` must be an integer.")
 
         # If `mode` is specified, compress the MPS with the specified mode
-        if mode == "":
+        if not mode:
             for i in range(self.num_sites-1):
                 qtn.tensor_core.tensor_compress_bond(self.mps[i], self.mps[i+1], max_bond = max_bond_dimension)
         else:
             if mode in ["left", "right", "flat"]:
-                self.mps.compress(form=mode, max_bond=max_bond_dimension)
+                if not max_bond_dimension:
+                    self.mps.compress(form=mode)
+                else:
+                    self.mps.compress(form=mode, max_bond=max_bond_dimension)
             else:
                 raise ValueError(f"`mode` must be either 'left', 'right', or 'flat'. Received {mode}.")
 
     def contract(self,
                  indices: Collection[int]) -> None:
-        """ Contract the MPS.
+        """ Contract tensors connected by the given indices.
 
         Parameters
         ----------
@@ -247,7 +283,6 @@ class MPS:
         ------
         TypeError
             If `indices` is not a collection of integers.
-        TypeError
             If any element of `indices` is not an integer.
         """
         if not isinstance(indices, Collection):
@@ -259,7 +294,7 @@ class MPS:
 
     def permute(self,
                 shape: str) -> None:
-        """ Permute the indices of each tensor in this MPS to match `shape`.
+        """ Permute the indices of each tensor in the MPS to match `shape`.
 
         Parameters
         ----------
@@ -278,7 +313,9 @@ class MPS:
 
     def change_indexing(self,
                         index_type: str) -> None:
-        """ Change the indexing of the MPS to match the statevector.
+        """ Change the indexing of the MPS to match the statevector. This operation basically
+        changes the indexing order of the statevector, and then re-defines the MPS for the
+        updated statevector.
 
         Parameters
         ----------
@@ -303,7 +340,7 @@ class MPS:
         # Initialize the indices of the tensors at each site of the MPS
         submps_indices = []
 
-        # If the MPS only has one site, add the (0, 0) coordinate to the sub MPS indices
+        # If the MPS only has one site, only add the (0, 0) coordinate to the sub MPS indices
         if self.num_sites == 1:
             return [(0, 0)]
 
@@ -342,7 +379,7 @@ class MPS:
 
         return submps_indices
 
-    def generate_unitaries(self):
+    def generate_unitaries(self) -> list:
         """ Generate the unitaries of the MPS.
 
         Returns
@@ -350,9 +387,6 @@ class MPS:
         `generated_unitary_list` : list
             A list of unitaries to be applied to the MPS.
         """
-        # Define the physical dimension of the MPS
-        phy_dim = self.physical_dimension
-
         # Copy the MPS (as the MPS will be modified in place)
         mps_copy = copy.deepcopy(self.mps)
 
@@ -364,45 +398,55 @@ class MPS:
 
         # Iterate over the tensors' starting and ending indices
         for start_index, end_index in sub_mps_indices:
-            
-            # Initialize lists to store generated unitaries, isometries, and kernels
-            generated_unitaries, isomsetries, kernels = [], [], []
+            generated_unitaries: list = []
+            isomsetries: list = []
+            kernels: list = []
 
             # Iterate over the range from start_index to end_index (inclusive)
             for index in range(start_index, end_index + 1):
-
                 if index == end_index:
                     # Generate a single site unitary for the current tensor
-                    self._generate_single_site_unitary(mps_copy[index].data, start_index, end_index, generated_unitaries, isomsetries, kernels)
-                    
+                    self._generate_single_site_unitary(mps_copy[index].data,
+                                                       start_index, end_index,
+                                                       generated_unitaries,
+                                                       isomsetries,
+                                                       kernels)
+
                 elif index != start_index:
                     # Generate a two site unitary for the current tensor
-                    self._generate_two_site_unitary(mps_copy[index].data, generated_unitaries, isomsetries, kernels)
-                
+                    self._generate_two_site_unitary(mps_copy[index].data,
+                                                    generated_unitaries,
+                                                    isomsetries,
+                                                    kernels)
+
                 else:
                     # Generate a first site unitary for the current tensor
-                    self._generate_first_site_unitary(mps_copy[index].data, generated_unitaries, isomsetries, kernels)
+                    self._generate_first_site_unitary(mps_copy[index].data,
+                                                      generated_unitaries,
+                                                      isomsetries,
+                                                      kernels)
 
-            # Append the start_index, end_index, generated unitaries, isometries, and kernels to the list of generated unitaries
-            generated_unitary_list.append([start_index, end_index, generated_unitaries, isomsetries, kernels])
+            generated_unitary_list.append([start_index,
+                                           end_index,
+                                           generated_unitaries,
+                                           isomsetries,
+                                           kernels])
 
-        # Return the list of generated unitaries
         return generated_unitary_list
 
-
+    # TODO: Redo the comments for better clarity.
     def _generate_single_site_unitary(self,
-                                      mps_copy_data: np.ndarray,
+                                      mps_data: NDArray[np.complex128],
                                       start_index: int,
                                       end_index: int,
                                       generated_unitaries: list[qtn.Tensor],
-                                      isomsetries: list[list],
-                                      kernels: list[list]) -> None:
-        """
-        Generates a single site unitary for a given tensor in the MPS.
+                                      isomsetries: list[NDArray],
+                                      kernels: list[NDArray]) -> None:
+        """ Generate a single site unitary for a given tensor in the MPS.
 
         Parameters
         ----------
-        mps_copy_data : np.ndarray
+        mps_data : NDArray[np.complex128]
             The data of the MPS tensor at the specified index.
         start_index : int
             The starting index of the sub-MPS.
@@ -410,9 +454,9 @@ class MPS:
             The ending index of the sub-MPS.
         generated_unitaries : List[qtn.Tensor]
             The list of generated unitaries.
-        isomsetries : List[List]
+        isomsetries : list[NDArray]
             The list of isometries.
-        kernels : List[List]
+        kernels : list[NDArray]
             The list of kernels.
         """
         # Define the physical dimension of the MPS
@@ -424,13 +468,13 @@ class MPS:
             unitary = np.zeros((phy_dim, phy_dim), dtype=np.complex128)
 
             # Set the first row of the unitary to the data of the MPS at the specified index
-            unitary[0, :] = mps_copy_data.reshape((1, -1))
+            unitary[0, :] = mps_data.reshape((1, -1))
 
             # Set the second row of the unitary to the null space of the data of the MPS at the specified index
-            unitary[1, :] = linalg.null_space(mps_copy_data.reshape(1, -1).conj()).reshape(1, -1)
+            unitary[1, :] = linalg.null_space(mps_data.reshape(1, -1).conj()).reshape(1, -1)
         else:
             # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified site
-            unitary = mps_copy_data
+            unitary = mps_data
 
         # Convert the unitary to a qtn.Tensor
         # .T at the end is useful for the application of unitaries as quantum circuit
@@ -440,26 +484,26 @@ class MPS:
         generated_unitaries.append(unitary)
 
         # Append the blank isometries and kernels to the lists (this is to ensure same length as the generated unitaries)
-        isomsetries.append([])
-        kernels.append([])
+        isomsetries.append(np.array([]))
+        kernels.append(np.array([]))
 
+    # TODO: Redo the comments for better clarity.
     def _generate_two_site_unitary(self,
-                                mps_copy_data: np.ndarray,
-                                generated_unitaries: list[qtn.Tensor],
-                                isomsetries: list[np.ndarray],
-                                kernels: list[np.ndarray]) -> None:
-        """
-        Generates a two site unitary for a given tensor in the MPS.
+                                   mps_data: NDArray[np.complex128],
+                                   generated_unitaries: list[qtn.Tensor],
+                                   isomsetries: list[NDArray],
+                                   kernels: list[NDArray]) -> None:
+        """ Generate a two site unitary for a given tensor in the MPS.
 
         Parameters
         ----------
-        mps_copy_data : np.ndarray
+        mps_data : NDArray[np.complex128]
             The data of the MPS tensor at the specified index.
-        generated_unitaries : List[qtn.Tensor]
+        generated_unitaries : list[qtn.Tensor]
             The list of generated unitaries.
-        isomsetries : List[np.ndarray]
+        isomsetries : list[NDArray]
             The list of isometries.
-        kernels : List[np.ndarray]
+        kernels : list[NDArray]
             The list of kernels.
         """
         # Define the physical dimension of the MPS
@@ -469,10 +513,10 @@ class MPS:
         unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
 
         # Set the first row of the unitary to the MPS tensor at the specified site
-        unitary[0, :, :, :] = mps_copy_data
+        unitary[0, :, :, :] = mps_data
 
         # Set the second row of the unitary to the null space of the MPS tensor at the specified site
-        kernel = linalg.null_space(mps_copy_data.reshape((phy_dim, -1)).conj())
+        kernel = linalg.null_space(mps_data.reshape((phy_dim, -1)).conj())
 
         # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
         kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
@@ -512,23 +556,23 @@ class MPS:
         # Append the kernel to the list of kernels
         kernels.append(kernel)
 
+    # TODO: Redo the comments for better clarity.
     def _generate_first_site_unitary(self,
-                                    mps_copy_data: np.ndarray,
-                                    generated_unitaries: list[qtn.Tensor],
-                                    isomsetries: list[np.ndarray],
-                                    kernels: list[np.ndarray]) -> None:
-        """
-        Generates a first site unitary for a given tensor in the MPS.
+                                     mps_data: np.ndarray,
+                                     generated_unitaries: list[qtn.Tensor],
+                                     isomsetries: list[NDArray[np.number]],
+                                     kernels: list[NDArray[np.number]]) -> None:
+        """ Generate the first site unitary for a given tensor in the MPS.
 
         Parameters
         ----------
-        mps_copy_data : np.ndarray
+        mps_data : NDArray[np.number]
             The data of the MPS tensor at the specified index.
         generated_unitaries : List[qtn.Tensor]
             The list of generated unitaries.
-        isomsetries : List[np.ndarray]
+        isomsetries : list[NDArray[np.number]]
             The list of isometries.
-        kernels : List[np.ndarray]
+        kernels : list[NDArray[np.number]]
             The list of kernels.
         """
         # Define the physical dimension of the MPS
@@ -538,10 +582,10 @@ class MPS:
         unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
 
         # Set the first row of the unitary to the data of the MPS at the specified index
-        unitary[0, 0, :, :] = mps_copy_data.reshape((phy_dim, -1))
+        unitary[0, 0, :, :] = mps_data.reshape((phy_dim, -1))
 
         # Get the kernel from the data of the MPS at the specified index
-        kernel = linalg.null_space(mps_copy_data.reshape((1, -1)).conj())
+        kernel = linalg.null_space(mps_data.reshape((1, -1)).conj())
 
         # Iterate over the physical dimension
         for i in range(phy_dim):
@@ -589,8 +633,6 @@ class MPS:
         # Append the kernel to the list of kernels
         kernels.append(kernel)
 
-    
-    
     # TODO: Redo the comments for better clarity.
     def generate_bond_d_unitary(self) -> list:
         """ Generate the unitary for the bond-d compression of the MPS.
@@ -613,102 +655,123 @@ class MPS:
         generated_unitary_list = mps_copy.generate_unitaries()
 
         return generated_unitary_list
-    
-    # DO we want these functions to return the MPS or inplace unitary transformation is okay?
-    def apply_unitary_layer_on_wfn(self, 
-                                   generated_unitary_list: list):
+
+    def apply_unitary_layer(self,
+                            generated_unitary_list: list) -> None:
         """ Apply the unitary layer on the MPS.
 
         Parameters
         ----------
         `generated_unitary_list` (list):
             A list of unitaries to be applied to the MPS.
-
         """
-        # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = copy.deepcopy(self.mps)
-
         # Iterate over the generated unitary list and the start and end indices
         for start_index, end_index, generated_unitaries, _, _ in generated_unitary_list:
             # Iterate over the indices of the MPS
             for index in range(start_index, end_index + 1):
                 # If the index is the end index
                 if index == end_index:
-                    # Add the generated unitary gates to the MPS
-                    mps_copy.gate_(generated_unitaries[index - start_index].data, where=[index])
+                    # Apply the generated unitary gates to the MPS (use `.gate_` as the operation is inplace)
+                    # o-o-o-o-o-o-o
+                    # | | | | | | |
+                    #     GGG
+                    #     | |
+                    self.mps.gate_(generated_unitaries[index - start_index].data, where=[index])
 
-                    # Define the location
-                    loc = np.where([isinstance(mps_copy[site], tuple) for site in range(mps_copy.L)])[0][0]
+                    # Define the location to contract the tensors after applying the unitary gates
+                    loc = np.where([isinstance(self.mps[site], tuple) for site in range(self.num_sites)])[0][0]
 
-                    # Contract the index
-                    mps_copy.contract_ind(mps_copy[loc][-1].inds[-1])
+                    # Contract the tensors at the specified location
+                    # o-o-o-GGG-o-o-o
+                    # | | | / \ | | |
+                    self.contract(self.mps[loc][-1].inds[-1])
 
-                # Otherwise
                 else:
-                    # Split the MPS at the specified index
-                    mps_copy = mps_copy.gate_split(generated_unitaries[index - start_index].data, where=[index, index + 1])
+                    # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
+                    #     -o-o-A-B-o-o-
+                    #      | | | | | |            -o-o-GGG-o-o-           -o-o-X~Y-o-o-
+                    #      | | GGG | |     ==>     | | | | | |     ==>     | | | | | |
+                    #      | | | | | |                 i j                     i j
+                    #          i j
+                    # As might be found in Time-evolving block decimation (TEBD) algorithm
+                    self.mps.gate_split_(generated_unitaries[index - start_index].data,
+                                         where=[index, index + 1])
 
         # Permute the arrays of the MPS
-        mps_copy.permute_arrays(shape="lpr")
+        self.permute(shape='lpr')
 
         # Compress the MPS
-        mps_copy.compress("right")
+        self.compress(mode='right')
 
-        # # Return the MPS
-        # return mps_copy
-
-    def apply_unitary_layers_on_wfn(self,
-                                    unitary_layers: list):
+    def apply_unitary_layers(self,
+                             unitary_layers: list[list]) -> None:
         """ Apply the unitary layers on the MPS.
 
         Parameters
         ----------
-        `unitary_layers` (list):
-            A list of unitaries to be applied to the MPS.
+        `unitary_layers` (list[list]):
+            A list of unitary layers to be applied to the MPS.
         """
-        # Iterate over the unitary layers in reverse order
-        for layer in reversed(range(len(unitary_layers))):
-            # Apply the unitary layer on the MPS inplace
-            self.apply_unitary_layer_on_wfn(unitary_layers[layer])
+        # Iterate over the unitary layers in reverse order, and apply the unitary layers to the MPS
+        for layer in reversed(unitary_layers):
+            self.apply_unitary_layer(layer)
 
-        # # Return the MPS
-        # return mps_copy
-
-    def apply_inverse_unitary_layer_on_wfn(self,
-                                           generated_unitary_list: list):
+    # TODO: Consider merging this with `.apply_unitary_layer`, as the only difference seems to be
+    # the order of the unitaries applied, i.e., line 733.
+    def apply_inverse_unitary_layer(self,
+                                    generated_unitary_list: list):
         """ Apply the inverse unitary layer on the MPS.
 
         Parameters
         ----------
         `generated_unitary_list` (list):
             A list of unitaries to be applied to the MPS.
-
         """
-        # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = copy.deepcopy(self.mps)
-
         # Iterate over the generated unitary list and the start and end indices
         for start_index, end_index, generate_unitaries, _, _ in generated_unitary_list:
             # Iterate over the indices of the MPS in reverse order
             for index in list(reversed(range(start_index, end_index + 1))):
                 # If the index is the end index
                 if index == end_index:
-                    # Add the generated unitary gates to the MPS
-                    mps_copy.gate_(generate_unitaries[index - start_index].data.conj().T, where=[index])
+                    # Add the generated unitary gates to the MPS (use `.gate_` as the operation is inplace)
+                    # o-o-o-o-o-o-o
+                    # | | | | | | |
+                    #     GGG
+                    #     | |
+                    self.mps.gate_(generate_unitaries[index - start_index].data.conj().T, where=[index])
 
-                    # Define the location
-                    loc = np.where([isinstance(mps_copy[jt], tuple) for jt in range(mps_copy.L)])[0][0]
+                    # Define the location to contract the tensors after applying the unitary gates
+                    loc = np.where([isinstance(self.mps[jt], tuple) for jt in range(self.num_sites)])[0][0]
 
-                    # Contract the index
-                    mps_copy.contract_ind(mps_copy[loc][-1].inds[-1])
+                    # Contract the tensors at the specified location
+                    # o-o-o-GGG-o-o-o
+                    # | | | / \ | | |
+                    self.contract(self.mps[loc][-1].inds[-1])
 
-                # Otherwise
                 else:
-                    # Split the MPS at the specified index
-                    mps_copy = mps_copy.gate_split(generate_unitaries[index - start_index].data.conj().T, where=[index, index + 1])
+                    # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
+                    #     -o-o-A-B-o-o-
+                    #      | | | | | |            -o-o-GGG-o-o-           -o-o-X~Y-o-o-
+                    #      | | GGG | |     ==>     | | | | | |     ==>     | | | | | |
+                    #      | | | | | |                 i j                     i j
+                    #          i j
+                    # As might be found in Time-evolving block decimation (TEBD) algorithm
+                    self.mps.gate_split_(generate_unitaries[index - start_index].data.conj().T,
+                                         where=[index, index + 1])
 
         # Permute the arrays of the MPS
-        mps_copy.permute_arrays(shape="lpr")
+        self.permute(shape='lpr')
 
-        # # Compress the MPS
-        # return mps_copy
+        # Compress the MPS
+        self.compress(mode='right')
+
+    # TODO: Specify the parameters for best readability
+    def draw(self) -> None:
+        """ Draw the MPS.
+
+        Returns
+        -------
+        `fig`
+            The figure of the MPS.
+        """
+        self.mps.draw()
