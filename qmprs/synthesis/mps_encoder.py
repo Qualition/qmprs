@@ -20,13 +20,13 @@ from abc import ABC, abstractmethod
 from typing import Type
 
 # Import `qickit.data.Data`
-from qickit.data import Data
+from qickit.data import Data # type: ignore
 
 # Import `qickit.circuit.Circuit`
-from qickit.circuit import Circuit
+from qickit.circuit import Circuit # type: ignore
 
 # Import `qickit.types.collection.Collection` and `qickit.types.collection.NestedCollection`
-from qickit.types import Collection, NestedCollection
+from qickit.types import Collection, NestedCollection # type: ignore
 
 # Import `qmprs.mps.MPS`
 from qmprs.mps import MPS

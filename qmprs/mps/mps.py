@@ -21,10 +21,13 @@ import numpy as np
 from numpy.typing import NDArray
 import quimb.tensor as qtn # type: ignore
 from scipy import linalg # type: ignore
-from typing import Union
+from typing import Type, Union
 
 # Import `qickit.data.Data`
 from qickit.data import Data # type: ignore
+
+# Import `qickit.circuit.Circuit`
+from qickit.circuit import Circuit # type: ignore
 
 # Import `qickit.types.Collection` and `qickit.types.NestedCollection`
 from qickit.types import Collection, NestedCollection # type: ignore
@@ -243,7 +246,7 @@ class MPS:
     def compress(self,
                  max_bond_dimension: int | None = None,
                  mode: str | None = None) -> None:
-        """ Compress the bond dimension of the MPS.
+        """ SVD Compress the bond dimension of the MPS.
 
          a)│   │        b)│        │        c)│       │
          ━━●━━━●━━  ->  ━━>━━○━━○━━<━━  ->  ━━>━━━M━━━<━━
@@ -319,6 +322,29 @@ class MPS:
             raise TypeError("All elements of `indices` must be integers.")
 
         self.mps.contract_ind(indices)
+
+    # TODO
+    def polar_decompose(self) -> list:
+        """ Perform a polar decomposition on the MPS to retrieve the
+        isometries V and positive semidefinite matrix P.
+
+        Returns
+        -------
+        `isometries` : list
+            A list of isometries.
+        `positive_semidefinite_matrix` : list
+            A list of positive semidefinite matrices.
+
+        Usage
+        -----
+        >>> mps.polar_decompose()
+        """
+        return []
+
+    # TODO
+    def block_sites(self,
+                    block_size: int) -> None:
+        pass
 
     def permute(self,
                 shape: str) -> None:
@@ -479,70 +505,6 @@ class MPS:
                                            kernels])
 
         return generated_unitary_list
-
-    # TODO: Redo the comments for better clarity.
-    def _generate_single_site_unitary(self,
-                                      mps_data: NDArray[np.complex128],
-                                      start_index: int,
-                                      end_index: int,
-                                      generated_unitaries: list[qtn.Tensor],
-                                      isometries: list[NDArray],
-                                      kernels: list[NDArray]) -> list:
-        """ Generate a single site unitary for a given tensor in the MPS.
-
-        Parameters
-        ----------
-        mps_data : NDArray[np.complex128]
-            The data of the MPS tensor at the specified index.
-        start_index : int
-            The starting index of the sub-MPS.
-        end_index : int
-            The ending index of the sub-MPS.
-        generated_unitaries : List[qtn.Tensor]
-            The list of generated unitaries.
-        isometries : list[NDArray]
-            The list of isometries.
-        kernels : list[NDArray]
-            The list of kernels.
-
-        Returns
-        -------
-        `generated_unitaries` : list[qtn.Tensor]
-            The list of generated unitaries.
-        `isometries` : list[NDArray]
-            The list of isometries.
-        `kernels` : list[NDArray]
-            The list of kernels.
-        """
-        # Define the physical dimension of the MPS
-        phy_dim = self.physical_dimension
-
-        # Check if the sub-MPS has only one site
-        if end_index == start_index:
-            # Initialize the unitary with 0s
-            unitary = np.zeros((phy_dim, phy_dim), dtype=np.complex128)
-
-            # Set the first row of the unitary to the data of the MPS at the specified index
-            unitary[0, :] = mps_data.reshape((1, -1))
-
-            # Set the second row of the unitary to the null space of the data of the MPS at the specified index
-            unitary[1, :] = linalg.null_space(mps_data.reshape(1, -1).conj()).reshape(1, -1)
-        else:
-            # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified site
-            unitary = mps_data
-
-        # Convert the unitary to a qtn.Tensor
-        # .T at the end is useful for the application of unitaries as quantum circuit
-        unitary = qtn.Tensor(unitary.reshape((phy_dim, phy_dim)).T, inds=("v", "p"), tags={"G"})
-
-        # Append the unitary to the list of generated unitaries
-        generated_unitaries.append(unitary)
-
-        # Append the blank isometries and kernels to the lists (this is to ensure same length as the generated unitaries)
-        isometries.append(np.array([]))
-        kernels.append(np.array([]))
-
-        return [generated_unitaries, isometries, kernels]
 
     # TODO: Redo the comments for better clarity.
     def _generate_two_site_unitary(self,
@@ -713,6 +675,70 @@ class MPS:
         return [generated_unitaries, isometries, kernels]
 
     # TODO: Redo the comments for better clarity.
+    def _generate_single_site_unitary(self,
+                                      mps_data: NDArray[np.complex128],
+                                      start_index: int,
+                                      end_index: int,
+                                      generated_unitaries: list[qtn.Tensor],
+                                      isometries: list[NDArray],
+                                      kernels: list[NDArray]) -> list:
+        """ Generate a single site unitary for a given tensor in the MPS.
+
+        Parameters
+        ----------
+        mps_data : NDArray[np.complex128]
+            The data of the MPS tensor at the specified index.
+        start_index : int
+            The starting index of the sub-MPS.
+        end_index : int
+            The ending index of the sub-MPS.
+        generated_unitaries : List[qtn.Tensor]
+            The list of generated unitaries.
+        isometries : list[NDArray]
+            The list of isometries.
+        kernels : list[NDArray]
+            The list of kernels.
+
+        Returns
+        -------
+        `generated_unitaries` : list[qtn.Tensor]
+            The list of generated unitaries.
+        `isometries` : list[NDArray]
+            The list of isometries.
+        `kernels` : list[NDArray]
+            The list of kernels.
+        """
+        # Define the physical dimension of the MPS
+        phy_dim = self.physical_dimension
+
+        # Check if the sub-MPS has only one site
+        if end_index == start_index:
+            # Initialize the unitary with 0s
+            unitary = np.zeros((phy_dim, phy_dim), dtype=np.complex128)
+
+            # Set the first row of the unitary to the data of the MPS at the specified index
+            unitary[0, :] = mps_data.reshape((1, -1))
+
+            # Set the second row of the unitary to the null space of the data of the MPS at the specified index
+            unitary[1, :] = linalg.null_space(mps_data.reshape(1, -1).conj()).reshape(1, -1)
+        else:
+            # If the sub-MPS has more than one site, the unitary is the MPS tensor at the specified site
+            unitary = mps_data
+
+        # Convert the unitary to a qtn.Tensor
+        # .T at the end is useful for the application of unitaries as quantum circuit
+        unitary = qtn.Tensor(unitary.reshape((phy_dim, phy_dim)).T, inds=("v", "p"), tags={"G"})
+
+        # Append the unitary to the list of generated unitaries
+        generated_unitaries.append(unitary)
+
+        # Append the blank isometries and kernels to the lists (this is to ensure same length as the generated unitaries)
+        isometries.append(np.array([]))
+        kernels.append(np.array([]))
+
+        return [generated_unitaries, isometries, kernels]
+
+    # TODO: Redo the comments for better clarity.
     def generate_bond_d_unitary(self) -> list:
         """ Generate the unitary for the bond-d (physical dimension) compression of the MPS.
 
@@ -873,6 +899,60 @@ class MPS:
         # Iterate over the unitary layers in reverse order, and apply the unitary layers to the MPS
         for layer in reversed(unitary_layers):
             self.apply_unitary_layer(layer, inverse=inverse)
+
+    @staticmethod
+    def _circuit_from_unitary_layer(circuit: Circuit,
+                                    unitary_layer: list) -> None:
+        """ Apply a unitary layer to the quantum circuit.
+
+        Parameters
+        ----------
+        `circuit` : qickit.circuit.Circuit
+            The quantum circuit.
+        `unitary_layer` : list
+            The unitary layer to be applied to the circuit.
+        """
+        # Iterate over the generated unitary list
+        for start_index, end_index, generated_unitaries, _, _ in unitary_layer:
+            # Iterate over the start and end indices
+            for index in range(start_index, end_index + 1):
+                # Define the unitary matrix
+                unitary = generated_unitaries[index - start_index].data
+
+                # If this is the last index, then apply the unitary to the last qubit
+                if index == end_index:
+                    circuit.unitary(unitary, [index])
+
+                # Otherwise, apply the unitary to the current and next qubits
+                else:
+                    circuit.unitary(unitary, [index + 1, index])
+
+    # NOTE: I think this should be in `MPS` (here). What do you think?
+    def circuit_from_unitary_layers(self,
+                                    qc_framework: Type[Circuit]) -> Circuit:
+        """ Generate a quantum circuit from the MPS unitary layers.
+
+        Parameters
+        ----------
+        `qc_framework` : type[qickit.circuit.Circuit]
+            The quantum circuit framework.
+
+        Returns
+        -------
+        `circuit` : qickit.circuit.Circuit
+            The quantum circuit.
+        """
+        # Define the quantum circuit
+        circuit = qc_framework(self.num_sites, self.num_sites)
+
+        # Generate the unitary layers
+        unitary_layers = self.generate_unitaries()
+
+        # Iterate over the unitary layers in reverse order and apply the unitary layer
+        for layer in reversed(range(len(unitary_layers))):
+            MPS._circuit_from_unitary_layer(circuit, unitary_layers[layer])
+
+        return circuit
 
     # TODO: Specify the parameters for best readability
     def draw(self) -> None:
