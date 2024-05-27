@@ -62,6 +62,10 @@ class MPS:
         The number of sites for the MPS.
     `physical_dimension` : int
         The physical dimension of the MPS.
+    `canonical_form` : str
+        The canonical form of the MPS.
+    `normalized` : bool
+        Whether the MPS is normalized.
 
     Raises
     ------
@@ -113,13 +117,16 @@ class MPS:
         else:
             raise ValueError("Must provide either `statevector` or `mps`.")
 
+        # Check if the MPS is normalized
+        self.normalized = (self.mps.norm() == 1)
+
         # Define the maximum bond dimension
         self.bond_dimension = bond_dimension
 
         # Define the number of sites for the MPS
         self.num_sites = self.statevector.num_qubits
 
-        # Define the physical dimension of the MPS
+        # Define the physical dimension of the MPS (for qubits this must be 2)
         if self.mps.phys_dim() != 2:
             raise ValueError("Only supports MPS with physical dimension=2.")
         else:
@@ -201,7 +208,7 @@ class MPS:
     def canonicalize(self,
                      mode: str,
                      normalize=False) -> None:
-        """ Canonicalize the MPS with the specified mode. This states how the singular values from
+        """ Convert the MPS to the canonical form. This states how the singular values from
         the SVD are absorbed into the left or right tensors.
         - If `mode` is "left", the singular values are absorbed into the tensors to their
         right. (all tensors contract to unit matrix from left)
@@ -238,8 +245,10 @@ class MPS:
         """
         if mode == "left":
             self.mps.left_canonize(normalize=normalize)
+            self.mps.canonical_form = "left"
         elif mode == "right":
             self.mps.right_canonize(normalize=normalize)
+            self.mps.canonical_form = "right"
         else:
             raise ValueError("`mode` must be either 'left' or 'right'.")
 
@@ -297,54 +306,81 @@ class MPS:
             else:
                 raise ValueError(f"`mode` must be either 'left', 'right', or 'flat'. Received {mode}.")
 
+    # TODO: This implementation is wrong, as it doesn't accept list of indices.
+    # Need to fix this.
+    # NOTE: Blocking is the same as contracting apparently.
     def contract(self,
-                 indices: Collection[int]) -> None:
-        """ Contract tensors connected by the given indices.
+                 sites: Collection[int]) -> None:
+        """ Contract/block tensors sites together.
 
         Parameters
         ----------
-        `indices` : Collection[int]
-            The indices to contract.
+        `sites` : Collection[int]
+            The sites to contract.
 
         Raises
         ------
         TypeError
-            If `indices` is not a collection of integers.
-            If any element of `indices` is not an integer.
+            If `sites` is not a collection of integers.
+            If any element of `sites` is not an integer.
 
         Usage
         -----
         >>> mps.contract([0, 1])
         """
-        if not isinstance(indices, Collection):
-            raise TypeError("`indices` must be a collection of integers.")
-        elif not all(isinstance(index, int) for index in indices):
-            raise TypeError("All elements of `indices` must be integers.")
+        if not isinstance(sites, Collection):
+            raise TypeError("`sites` must be a collection of integers.")
+        elif not all(isinstance(index, int) for index in sites):
+            raise TypeError("All elements of `sites` must be integers.")
 
-        self.mps.contract_ind(indices)
+        self.mps ^= (self.mps.site_tag(i) for i in sites)
 
-    # TODO
-    def polar_decompose(self) -> list:
+    def contract_ind(self,
+                     ind: str) -> None:
+        """ Contract tensors connected by the given index.
+
+        Parameters
+        ----------
+        `ind` : str
+            The index to contract.
+
+        Usage
+        -----
+        >>> mps.contract_ind("k0")
+        """
+        self.mps.contract_ind(ind)
+
+    # TODO: Should this return sth, or should we access the isometries and positive semidefinite matrix from the MPS?
+    def polar_decompose(self,
+                        indices: Collection[int]) -> None:
         """ Perform a polar decomposition on the MPS to retrieve the
         isometries V and positive semidefinite matrix P.
 
+        # TODO: Add diagram (9) from Wei et al.
+
+        Parameters
+        ----------
+        `indices` : Collection[int]
+            The indices of each block to polar decompose.
+
         Returns
         -------
-        `isometries` : list
+        `isometries` : qtn.Tensor
             A list of isometries.
-        `positive_semidefinite_matrix` : list
-            A list of positive semidefinite matrices.
+        `positive_semidefinite_matrix` : qtn.Tensor
+            A list of positive semidefinite matrix.
 
         Usage
         -----
         >>> mps.polar_decompose()
         """
-        return []
-
-    # TODO
-    def block_sites(self,
-                    block_size: int) -> None:
-        pass
+        self.mps.split_tensor(
+            tags=self.mps.site_tag(indices[0]), 
+            left_inds=[self.mps.site_ind(i) for i in indices],
+            method="polar_right",
+            ltags="V",
+            rtags="P",
+        )
 
     def permute(self,
                 shape: str) -> None:
@@ -445,66 +481,6 @@ class MPS:
                 submps_indices.append((temp, site))
 
         return submps_indices
-
-    def generate_unitaries(self) -> list:
-        """ Generate the unitaries of the MPS.
-
-        Returns
-        -------
-        `generated_unitary_list` : list
-            A list of unitaries to be applied to the MPS.
-
-        Usage
-        -----
-        >>> mps.generate_unitaries()
-        """
-        # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = copy.deepcopy(self.mps)
-
-        # Initialize the list of generated unitaries
-        generated_unitary_list = []
-
-        # Get the indices of the MPS tensors
-        sub_mps_indices = self.get_submps_indices()
-
-        # Iterate over the tensors' starting and ending indices
-        for start_index, end_index in sub_mps_indices:
-            generated_unitaries: list = []
-            isomsetries: list = []
-            kernels: list = []
-
-            # Iterate over the range from start_index to end_index (inclusive)
-            for index in range(start_index, end_index + 1):
-                if index == end_index:
-                    # Generate a single site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_single_site_unitary(mps_copy[index].data,
-                                                                                                   start_index,
-                                                                                                   end_index,
-                                                                                                   generated_unitaries,
-                                                                                                   isomsetries,
-                                                                                                   kernels)
-
-                elif index != start_index:
-                    # Generate a two site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_two_site_unitary(mps_copy[index].data,
-                                                                                                generated_unitaries,
-                                                                                                isomsetries,
-                                                                                                kernels)
-
-                else:
-                    # Generate a first site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_first_site_unitary(mps_copy[index].data,
-                                                                                                  generated_unitaries,
-                                                                                                  isomsetries,
-                                                                                                  kernels)
-
-            generated_unitary_list.append([start_index,
-                                           end_index,
-                                           generated_unitaries,
-                                           isomsetries,
-                                           kernels])
-
-        return generated_unitary_list
 
     # TODO: Redo the comments for better clarity.
     def _generate_two_site_unitary(self,
@@ -738,6 +714,66 @@ class MPS:
 
         return [generated_unitaries, isometries, kernels]
 
+    def generate_unitaries(self) -> list:
+        """ Generate the unitaries of the MPS.
+
+        Returns
+        -------
+        `generated_unitary_list` : list
+            A list of unitaries to be applied to the MPS.
+
+        Usage
+        -----
+        >>> mps.generate_unitaries()
+        """
+        # Copy the MPS (as the MPS will be modified in place)
+        mps_copy = copy.deepcopy(self.mps)
+
+        # Initialize the list of generated unitaries
+        generated_unitary_list = []
+
+        # Get the indices of the MPS tensors
+        sub_mps_indices = self.get_submps_indices()
+
+        # Iterate over the tensors' starting and ending indices
+        for start_index, end_index in sub_mps_indices:
+            generated_unitaries: list = []
+            isomsetries: list = []
+            kernels: list = []
+
+            # Iterate over the range from start_index to end_index (inclusive)
+            for index in range(start_index, end_index + 1):
+                if index == end_index:
+                    # Generate a single site unitary for the current tensor
+                    generated_unitaries, isomsetries, kernels = self._generate_single_site_unitary(mps_copy[index].data,
+                                                                                                   start_index,
+                                                                                                   end_index,
+                                                                                                   generated_unitaries,
+                                                                                                   isomsetries,
+                                                                                                   kernels)
+
+                elif index != start_index:
+                    # Generate a two site unitary for the current tensor
+                    generated_unitaries, isomsetries, kernels = self._generate_two_site_unitary(mps_copy[index].data,
+                                                                                                generated_unitaries,
+                                                                                                isomsetries,
+                                                                                                kernels)
+
+                else:
+                    # Generate a first site unitary for the current tensor
+                    generated_unitaries, isomsetries, kernels = self._generate_first_site_unitary(mps_copy[index].data,
+                                                                                                  generated_unitaries,
+                                                                                                  isomsetries,
+                                                                                                  kernels)
+
+            generated_unitary_list.append([start_index,
+                                           end_index,
+                                           generated_unitaries,
+                                           isomsetries,
+                                           kernels])
+
+        return generated_unitary_list
+
     # TODO: Redo the comments for better clarity.
     def generate_bond_d_unitary(self) -> list:
         """ Generate the unitary for the bond-d (physical dimension) compression of the MPS.
@@ -793,7 +829,7 @@ class MPS:
                     # Contract the tensors at the specified location
                     # o-o-o-GGG-o-o-o
                     # | | | / \ | | |
-                    self.contract(self.mps[loc][-1].inds[-1])
+                    self.contract_ind(self.mps[loc][-1].inds[-1])
 
                 else:
                     # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
@@ -840,7 +876,7 @@ class MPS:
                     # Contract the tensors at the specified location
                     # o-o-o-GGG-o-o-o
                     # | | | / \ | | |
-                    self.contract(self.mps[loc][-1].inds[-1])
+                    self.contract_ind(self.mps[loc][-1].inds[-1])
 
                 else:
                     # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
