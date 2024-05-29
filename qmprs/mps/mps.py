@@ -37,7 +37,7 @@ NumberType = int | float | complex
 
 
 # TODO: Confirm all methods and attributes needed for MPS support
-# TODO: Add string diagrams for visual documentation where possible
+# TODO: Add string diagrams for visual documentation where possible (ensure consistency)
 class MPS:
     """ `qmprs.mps.MPS` is the class for creating and manipulating matrix product states (MPS).
 
@@ -118,7 +118,7 @@ class MPS:
             raise ValueError("Must provide either `statevector` or `mps`.")
 
         # Check if the MPS is normalized
-        self.normalized = (self.mps.norm() == 1)
+        self.normalized = self.mps.norm() == 1
 
         # Define the maximum bond dimension
         self.bond_dimension = bond_dimension
@@ -288,10 +288,11 @@ class MPS:
         -----
         >>> mps.compress(max_bond_dimension=16)
         """
-        if not (max_bond_dimension and mode):
+        if not (max_bond_dimension or mode):
             raise ValueError("At least `max_bond_dimension` or `mode` must be specified.")
-        if not isinstance(max_bond_dimension, int):
-            raise TypeError("`max_bond_dimension` must be an integer.")
+        if max_bond_dimension is not None:
+            if not isinstance(max_bond_dimension, int):
+                raise TypeError("`max_bond_dimension` must be an integer.")
 
         # If `mode` is specified, compress the MPS with the specified mode
         if not mode:
@@ -306,12 +307,11 @@ class MPS:
             else:
                 raise ValueError(f"`mode` must be either 'left', 'right', or 'flat'. Received {mode}.")
 
-    # TODO: This implementation is wrong, as it doesn't accept list of indices.
-    # Need to fix this.
-    # NOTE: Blocking is the same as contracting apparently.
-    def contract(self,
-                 sites: Collection[int]) -> None:
+    def contract_site(self,
+                      sites: Collection[int]) -> None:
         """ Contract/block tensors sites together.
+
+        # TODO: Add Figure
 
         Parameters
         ----------
@@ -335,20 +335,22 @@ class MPS:
 
         self.mps ^= (self.mps.site_tag(i) for i in sites)
 
-    def contract_ind(self,
-                     ind: str) -> None:
+    def contract_index(self,
+                       index: str) -> None:
         """ Contract tensors connected by the given index.
+
+        # TODO: Add Figure
 
         Parameters
         ----------
-        `ind` : str
+        `index` : str
             The index to contract.
 
         Usage
         -----
         >>> mps.contract_ind("k0")
         """
-        self.mps.contract_ind(ind)
+        self.mps.contract_ind(index)
 
     # TODO: Should this return sth, or should we access the isometries and positive semidefinite matrix from the MPS?
     def polar_decompose(self,
@@ -361,21 +363,21 @@ class MPS:
         Parameters
         ----------
         `indices` : Collection[int]
-            The indices of each block to polar decompose.
+            The indices of each tensor to polar decompose.
 
         Returns
         -------
         `isometries` : qtn.Tensor
-            A list of isometries.
+            The isometries.
         `positive_semidefinite_matrix` : qtn.Tensor
-            A list of positive semidefinite matrix.
+            The positive semidefinite matrix.
 
         Usage
         -----
         >>> mps.polar_decompose()
         """
         self.mps.split_tensor(
-            tags=self.mps.site_tag(indices[0]), 
+            tags=self.mps.site_tag(indices[0]),
             left_inds=[self.mps.site_ind(i) for i in indices],
             method="polar_right",
             ltags="V",
@@ -405,27 +407,6 @@ class MPS:
             self.mps.permute_arrays(shape)
         else:
             raise ValueError(f"`shape` must be either 'lrp' or 'lpr'. Received {shape}.")
-
-    def change_indexing(self,
-                        index_type: str) -> None:
-        """ Change the indexing of the MPS to match the statevector. This operation basically
-        changes the indexing order of the statevector, and then re-defines the MPS for the
-        updated statevector.
-
-        Parameters
-        ----------
-        `index_type` : str
-            The indexing type for the statevector, being "row" or "snake".
-
-        Usage
-        -----
-        >>> mps.change_indexing("row")
-        """
-        # Change the indexing of the statevector
-        self.statevector.change_indexing(index_type)
-
-        # Update the MPS definition
-        self.mps = MPS.from_statevector(self.statevector, self.bond_dimension)
 
     # TODO: Redo the comments for better clarity.
     def get_submps_indices(self) -> list[tuple[int, int]]:
@@ -540,7 +521,7 @@ class MPS:
         generated_unitaries.append(unitary)
 
         # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-        unitary = unitary.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim)
+        unitary = unitary.data.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim) # type: ignore
 
         # Get the kernel from the unitary
         kernel = unitary[:, 1, :, :].reshape(2, 4).T
@@ -630,7 +611,7 @@ class MPS:
         generated_unitaries.append(unitary)
 
         # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-        unitary = unitary.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim))
+        unitary = unitary.data.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim)) # type: ignore
 
         # Get the kernel from the unitary
         kernel = unitary[:, 1, :, :].reshape(2, 4).T
@@ -791,10 +772,10 @@ class MPS:
         mps_copy = copy.deepcopy(self)
 
         # Compress the MPS to a bond dimension of the physical dimension of the MPS
-        mps_copy.compress(self.physical_dimension)
+        mps_copy.compress(mode="right", max_bond_dimension=self.physical_dimension)
 
         # Right canonicalize the compressed MPS
-        mps_copy.canonicalize('right')
+        mps_copy.canonicalize(mode="right", normalize=True)
 
         # Generate the unitaries
         generated_unitary_list = mps_copy.generate_unitaries()
@@ -829,7 +810,7 @@ class MPS:
                     # Contract the tensors at the specified location
                     # o-o-o-GGG-o-o-o
                     # | | | / \ | | |
-                    self.contract_ind(self.mps[loc][-1].inds[-1])
+                    self.contract_index(self.mps[loc][-1].inds[-1])
 
                 else:
                     # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
@@ -843,10 +824,10 @@ class MPS:
                                          where=[index, index + 1])
 
         # Permute the arrays of the MPS
-        self.permute(shape='lpr')
+        self.permute(shape="lpr")
 
         # Compress the MPS
-        self.compress(mode='right')
+        self.compress(mode="right")
 
     def _apply_inverse_unitary_layer(self,
                                      generated_unitary_list: list):
@@ -876,7 +857,7 @@ class MPS:
                     # Contract the tensors at the specified location
                     # o-o-o-GGG-o-o-o
                     # | | | / \ | | |
-                    self.contract_ind(self.mps[loc][-1].inds[-1])
+                    self.contract_index(self.mps[loc][-1].inds[-1])
 
                 else:
                     # Apply a two-site gate and then split resulting tensor to retrieve the MPS form:
@@ -891,9 +872,6 @@ class MPS:
 
         # Permute the arrays of the MPS
         self.permute(shape='lpr')
-
-        # Compress the MPS
-        self.compress(mode='right')
 
     def apply_unitary_layer(self,
                             unitary_layer: list,
@@ -963,15 +941,18 @@ class MPS:
                 else:
                     circuit.unitary(unitary, [index + 1, index])
 
-    # NOTE: I think this should be in `MPS` (here). What do you think?
+    # NOTE: Consider creating a primitive class called `UnitaryLayer`, since unitary_layer is not simply a unitary matrix (it has isometries, kernels, and start and end indices).
     def circuit_from_unitary_layers(self,
-                                    qc_framework: Type[Circuit]) -> Circuit:
+                                    qc_framework: Type[Circuit],
+                                    unitary_layers: list[list]) -> Circuit:
         """ Generate a quantum circuit from the MPS unitary layers.
 
         Parameters
         ----------
         `qc_framework` : type[qickit.circuit.Circuit]
             The quantum circuit framework.
+        `unitary_layers` : list[list]
+            A list of unitary layers to be applied to the circuit.
 
         Returns
         -------
@@ -980,9 +961,6 @@ class MPS:
         """
         # Define the quantum circuit
         circuit = qc_framework(self.num_sites, self.num_sites)
-
-        # Generate the unitary layers
-        unitary_layers = self.generate_unitaries()
 
         # Iterate over the unitary layers in reverse order and apply the unitary layer
         for layer in reversed(range(len(unitary_layers))):

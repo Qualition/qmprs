@@ -12,4 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO
+from __future__ import annotations
+
+__all__ = ['check_unitaries']
+
+import numpy as np
+
+
+def check_unitaries(generated_unitary_list: list) -> None:
+    """ Check if the generated unitaries are unitary.
+
+    Parameters
+    ----------
+    `generated_unitary_list` : list
+        The list of generated unitaries.
+
+    Raises
+    ------
+    `ValueError`:
+        If all the generated unitaries are not unitary.
+    """
+    # Iterate over the list of generated unitaries
+    for _, _, generated_unitaries, _, _ in generated_unitary_list:
+        # Iterate over the generated unitaries
+        for generated_unitary in generated_unitaries:
+            if not np.allclose(np.eye(generated_unitary.shape[0]) - generated_unitary.data @ generated_unitary.data.T.conj(), 0):
+                raise ValueError("ValueError : every generated unitary in the list must be a unitary.")
+            if not np.allclose(np.eye(generated_unitary.shape[0]) - generated_unitary.data.T.conj() @ generated_unitary.data, 0):
+                raise ValueError("ValueError : every generated unitary in the list must be a unitary.")

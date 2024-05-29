@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-__all__ = ['MPSEncoder']
+__all__ = ['MPSEncoder', 'Sequential']
 
 from abc import ABC, abstractmethod
 from typing import Type
@@ -25,15 +25,18 @@ from qickit.data import Data # type: ignore
 # Import `qickit.circuit.Circuit`
 from qickit.circuit import Circuit # type: ignore
 
-# Import `qickit.types.collection.Collection` and `qickit.types.collection.NestedCollection`
-from qickit.types import Collection, NestedCollection # type: ignore
+# Import `qickit.types.collection.NestedCollection`
+from qickit.types import NestedCollection # type: ignore
 
 # Import `qmprs.mps.MPS`
 from qmprs.mps import MPS
 
+# Import `qmprs.synthesis.mps_utils.check_unitaries`
+from qmprs.synthesis.mps_utils import check_unitaries
+
 
 class MPSEncoder(ABC):
-    """ `qickit.MPSEncoder` is the class for preparing quantum states using Matrix Product
+    """ `qmprs.synthesis.mps_encoder.MPSEncoder` is the class for preparing quantum states using Matrix Product
     States (MPS).
 
     Parameters
@@ -47,8 +50,6 @@ class MPSEncoder(ABC):
         """
         self.circuit_framework = circuit_framework
 
-    # TODO: Consider doing this as an override instead
-    @abstractmethod
     def prepare_state(self,
                       statevector: Data | NestedCollection,
                       bond_dimension: int,
@@ -60,7 +61,7 @@ class MPSEncoder(ABC):
 
         Parameters
         ----------
-        `statevector` : Data | NestedCollection
+        `statevector` : qickit.data.Data | NestedCollection[NumberType]
             The statevector of the quantum system.
         `bond_dimension` : int
             The maximum bond dimension.
@@ -73,15 +74,26 @@ class MPSEncoder(ABC):
         `**kwargs`
             Additional keyword arguments.
         """
-        pass
+        # Check if the statevector is a `Data` instance
+        if not isinstance(statevector, Data):
+            statevector = Data(statevector)
+
+        # Change the indexing (if necessary)
+        statevector.change_indexing(index_type)
+
+        # Compress the statevector
+        if compression_percentage > 0.0:
+            statevector.compress(compression_percentage)
+
+        # Define an `qmprs.mps.MPS` instance
+        mps = MPS(statevector, bond_dimension=bond_dimension)
+
+        # Prepare the MPS
+        return self.prepare_mps(mps, **kwargs)
 
     @abstractmethod
     def prepare_mps(self,
                     mps: MPS,
-                    bond_dimension: int,
-                    compression_percentage: float=0.0,
-                    index_type: str='row',
-                    *args,
                     **kwargs) -> Circuit:
         """ Prepare the quantum state using MPS.
 
@@ -89,15 +101,104 @@ class MPSEncoder(ABC):
         ----------
         `mps` : qmprs.mps.MPS
             The matrix product state (MPS).
-        `bond_dimension` : int
-            The maximum bond dimension.
-        `compression_percentage` : float
-            The compression percentage.
-        `index_type` : str
-            The indexing type.
-        `*args`
-            Additional arguments.
         `**kwargs`
             Additional keyword arguments.
         """
         pass
+
+
+class Sequential(MPSEncoder):
+    """ `qmprs.synthesis.mps_encoder.Sequential` is the class for preparing MPS
+    using Sequential encoding.
+
+    Parameters
+    ----------
+    `circuit_framework` : Type[Circuit]
+        The quantum circuit framework.
+    """
+    def __init__(self,
+                 circuit_framework: Type[Circuit]) -> None:
+        """ Initialize a `qickit.Sequential` instance.
+        """
+        super().__init__(circuit_framework)
+
+    def prepare_mps(self,
+                    mps: MPS,
+                    **kwargs) -> Circuit:
+        """ Prepare the quantum state using MPS.
+
+        Parameters
+        ----------
+        `mps` : qmprs.mps.MPS
+            The matrix product state (MPS).
+        `num_layers` : int
+            The number of sequential layers.
+        """
+        # Define the number of layers
+        num_layers = kwargs.get('num_layers')
+
+        # Normalize the MPS
+        mps.normalize()
+
+        # Compress the MPS to canonical form
+        mps.compress(mode='right')
+
+        # Define the circuit to prepare the MPS
+        circuit = self.circuit_framework(mps.num_sites, mps.num_sites)
+
+        def sequential_unitary_circuit(mps: MPS,
+                                       circuit: Circuit) -> Circuit:
+            """ Sequentially apply unitary layers to a MPS to prepare a target state.
+
+            Parameters
+            ----------
+            `mps` : qmprs.mps.MPS
+                The MPS state.
+            `circuit` : Circuit
+                The quantum circuit.
+
+            Returns
+            -------
+            `circuit` : Circuit
+                The quantum circuit preparing the MPS.
+            """
+            # Define the unitary layers
+            unitary_layers: list = []
+
+            # Permute the arrays to the left-right canonical form
+            mps.permute(shape='lpr')
+            mps.canonicalize('right')
+            mps.normalize()
+
+            # Iterate over the number of layers
+            for _ in range(num_layers): # type: ignore
+                # Generate the bond dimension unitary
+                unitary_layer = mps.generate_bond_d_unitary()
+
+                # Check the unitaries
+                check_unitaries(unitary_layer)
+
+                # Append the unitary layer to the list of unitary layers
+                unitary_layers.append(unitary_layer)
+
+                # Apply the inverse unitary layer on the wavefunction
+                mps.apply_unitary_layer(unitary_layer, inverse=True)
+
+                # Normalize the MPS and convert to right canonical form
+                mps.canonicalize(mode='right', normalize=True)
+
+                # Compress the MPS
+                mps.mps.compress()
+
+            # Generate the quantum circuit from the unitary layers
+            circuit.add(mps.circuit_from_unitary_layers(type(circuit), unitary_layers), range(mps.num_sites))
+
+        # Define the sequential unitary circuit that prepares the target MPS with
+        # the specified parameters
+        sequential_unitary_circuit(mps, circuit)
+
+        # Apply a vertical reverse
+        circuit.vertical_reverse()
+
+        # Return the overlap and circuit
+        return circuit
