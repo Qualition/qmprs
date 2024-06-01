@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-__all__ = ['MPS']
+__all__ = ["MPS"]
 
 import copy
 import numpy as np
@@ -278,30 +278,29 @@ class MPS:
 
         Raises
         ------
-        TypeError
-            If `max_bond_dimension` is not an integer.
         ValueError
-            If `max_bond_dimension` is not specified and `mode` is not specified.
             If `mode` is not "left", "right", or "flat".
 
         Usage
         -----
         >>> mps.compress(max_bond_dimension=16)
         """
+        # If no parameters are passed, perform a left canonicalization followed by right compression
         if not (max_bond_dimension or mode):
-            raise ValueError("At least `max_bond_dimension` or `mode` must be specified.")
-        if max_bond_dimension is not None:
-            if not isinstance(max_bond_dimension, int):
-                raise TypeError("`max_bond_dimension` must be an integer.")
+            self.mps.compress()
 
-        # If `mode` is specified, compress the MPS with the specified mode
-        if not mode:
+        # If only `max_bond_dimension` is specified, compress the MPS with the specified bond dimension
+        elif not mode:
             for i in range(self.num_sites-1):
                 qtn.tensor_core.tensor_compress_bond(self.mps[i], self.mps[i+1], max_bond = max_bond_dimension)
+
         else:
             if mode in ["left", "right", "flat"]:
+                # If only `mode` is specified, compress the MPS with the specified mode
                 if not max_bond_dimension:
                     self.mps.compress(form=mode)
+
+                # If both `mode` and `max_bond_dimension` are specified, compress the MPS with the specified mode
                 else:
                     self.mps.compress(form=mode, max_bond=max_bond_dimension)
             else:

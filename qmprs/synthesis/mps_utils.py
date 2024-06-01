@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-__all__ = ['check_unitaries']
+__all__ = ["check_unitaries"]
 
 import numpy as np
 

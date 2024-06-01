@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ['MPO']
+__all__ = ["MPO"]
 
 from qmprs.mpo.mpo import MPO

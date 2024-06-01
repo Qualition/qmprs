@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-__all__ = ['MPO']
+__all__ = ["MPO"]
 
 
 # TODO: Implement MPO class

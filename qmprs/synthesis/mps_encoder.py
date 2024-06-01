@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-__all__ = ['MPSEncoder', 'Sequential']
+__all__ = ["MPSEncoder", "Sequential"]
 
 from abc import ABC, abstractmethod
 from typing import Type
@@ -54,8 +54,7 @@ class MPSEncoder(ABC):
                       statevector: Data | NestedCollection,
                       bond_dimension: int,
                       compression_percentage: float=0.0,
-                      index_type: str='row',
-                      *args,
+                      index_type: str="row",
                       **kwargs) -> Circuit:
         """ Prepare the quantum state using statevector.
 
@@ -69,8 +68,6 @@ class MPSEncoder(ABC):
             The compression percentage.
         `index_type` : str
             The indexing type.
-        `*args`
-            Additional arguments.
         `**kwargs`
             Additional keyword arguments.
         """
@@ -109,7 +106,13 @@ class MPSEncoder(ABC):
 
 class Sequential(MPSEncoder):
     """ `qmprs.synthesis.mps_encoder.Sequential` is the class for preparing MPS
-    using Sequential encoding.
+    using Sequential encoding. The circuit is constructed using the disentangling
+    algorithm described in the 2019 paper by Shi-Ju Ran.
+
+    ref: https://arxiv.org/abs/1908.07958
+
+    The circuit scales $O(N * \chi^2)$ where N is the number of qubits and $\chi$
+    is the bond dimension.
 
     Parameters
     ----------
@@ -135,13 +138,13 @@ class Sequential(MPSEncoder):
             The number of sequential layers.
         """
         # Define the number of layers
-        num_layers = kwargs.get('num_layers')
+        num_layers = kwargs.get("num_layers")
 
         # Normalize the MPS
         mps.normalize()
 
         # Compress the MPS to canonical form
-        mps.compress(mode='right')
+        mps.compress(mode="right")
 
         # Define the circuit to prepare the MPS
         circuit = self.circuit_framework(mps.num_sites, mps.num_sites)
@@ -166,8 +169,8 @@ class Sequential(MPSEncoder):
             unitary_layers: list = []
 
             # Permute the arrays to the left-right canonical form
-            mps.permute(shape='lpr')
-            mps.canonicalize('right')
+            mps.permute(shape="lpr")
+            mps.canonicalize("right")
             mps.normalize()
 
             # Iterate over the number of layers
@@ -185,10 +188,10 @@ class Sequential(MPSEncoder):
                 mps.apply_unitary_layer(unitary_layer, inverse=True)
 
                 # Normalize the MPS and convert to right canonical form
-                mps.canonicalize(mode='right', normalize=True)
+                mps.canonicalize(mode="right", normalize=True)
 
-                # Compress the MPS
-                mps.mps.compress()
+                # Left canonicalize and right compress the MPS (default mode)
+                mps.compress()
 
             # Generate the quantum circuit from the unitary layers
             circuit.add(mps.circuit_from_unitary_layers(type(circuit), unitary_layers), range(mps.num_sites))

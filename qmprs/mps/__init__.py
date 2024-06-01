@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ['MPS']
+__all__ = ["MPS"]
 
 from qmprs.mps.mps import MPS
