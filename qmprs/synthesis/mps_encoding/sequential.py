@@ -14,94 +14,16 @@
 
 from __future__ import annotations
 
-__all__ = ["MPSEncoder", "Sequential"]
-
-from abc import ABC, abstractmethod
-from typing import Type
-
-# Import `qickit.data.Data`
-from qickit.data import Data # type: ignore
+__all__ = ["Sequential"]
 
 # Import `qickit.circuit.Circuit`
 from qickit.circuit import Circuit # type: ignore
 
-# Import `qickit.types.collection.NestedCollection`
-from qickit.types import NestedCollection # type: ignore
-
 # Import `qmprs.mps.MPS`
 from qmprs.mps import MPS
 
-# Import `qmprs.synthesis.mps_utils.check_unitaries`
-from qmprs.synthesis.mps_utils import check_unitaries
-
-
-class MPSEncoder(ABC):
-    """ `qmprs.synthesis.mps_encoder.MPSEncoder` is the class for preparing quantum states using Matrix Product
-    States (MPS).
-
-    Parameters
-    ----------
-    `circuit_framework` : Type[Circuit]
-        The quantum circuit framework.
-    """
-    def __init__(self,
-                 circuit_framework: Type[Circuit]) -> None:
-        """ Initialize a `qickit.MPSEncoder` instance.
-        """
-        self.circuit_framework = circuit_framework
-
-    def prepare_state(self,
-                      statevector: Data | NestedCollection,
-                      bond_dimension: int,
-                      compression_percentage: float=0.0,
-                      index_type: str="row",
-                      **kwargs) -> Circuit:
-        """ Prepare the quantum state using statevector.
-
-        Parameters
-        ----------
-        `statevector` : qickit.data.Data | NestedCollection[NumberType]
-            The statevector of the quantum system.
-        `bond_dimension` : int
-            The maximum bond dimension.
-        `compression_percentage` : float
-            The compression percentage.
-        `index_type` : str
-            The indexing type.
-        `**kwargs`
-            Additional keyword arguments.
-        """
-        # Check if the statevector is a `Data` instance
-        if not isinstance(statevector, Data):
-            statevector = Data(statevector)
-
-        # Change the indexing (if necessary)
-        statevector.change_indexing(index_type)
-
-        # Compress the statevector
-        if compression_percentage > 0.0:
-            statevector.compress(compression_percentage)
-
-        # Define an `qmprs.mps.MPS` instance
-        mps = MPS(statevector, bond_dimension=bond_dimension)
-
-        # Prepare the MPS
-        return self.prepare_mps(mps, **kwargs)
-
-    @abstractmethod
-    def prepare_mps(self,
-                    mps: MPS,
-                    **kwargs) -> Circuit:
-        """ Prepare the quantum state using MPS.
-
-        Parameters
-        ----------
-        `mps` : qmprs.mps.MPS
-            The matrix product state (MPS).
-        `**kwargs`
-            Additional keyword arguments.
-        """
-        pass
+# Import `qmprs.synthesis.mps_encoding.MPSEncoder`
+from qmprs.synthesis.mps_encoding import MPSEncoder
 
 
 class Sequential(MPSEncoder):
@@ -111,20 +33,17 @@ class Sequential(MPSEncoder):
 
     ref: https://arxiv.org/abs/1908.07958
 
-    The circuit scales $O(N * \chi^2)$ where N is the number of qubits and $\chi$
+    Notes
+    -----
+    - The circuit depth scales $O(N * \chi^2)$ where N is the number of qubits and $\chi$
     is the bond dimension.
+    - The sequential encoding approach allows for encoding of long-range correlated states.
 
     Parameters
     ----------
     `circuit_framework` : Type[Circuit]
         The quantum circuit framework.
     """
-    def __init__(self,
-                 circuit_framework: Type[Circuit]) -> None:
-        """ Initialize a `qickit.Sequential` instance.
-        """
-        super().__init__(circuit_framework)
-
     def prepare_mps(self,
                     mps: MPS,
                     **kwargs) -> Circuit:
@@ -133,9 +52,9 @@ class Sequential(MPSEncoder):
         Parameters
         ----------
         `mps` : qmprs.mps.MPS
-            The matrix product state (MPS).
+            The MPS to be prepared.
         `num_layers` : int
-            The number of sequential layers.
+            The number of sequential layers. Passed as a kwarg.
         """
         # Define the number of layers
         num_layers = kwargs.get("num_layers")
@@ -175,11 +94,8 @@ class Sequential(MPSEncoder):
 
             # Iterate over the number of layers
             for _ in range(num_layers): # type: ignore
-                # Generate the bond dimension unitary
+                # Generate the unitary for the bond-d (physical dimension) compression of the MPS.
                 unitary_layer = mps.generate_bond_d_unitary()
-
-                # Check the unitaries
-                check_unitaries(unitary_layer)
 
                 # Append the unitary layer to the list of unitary layers
                 unitary_layers.append(unitary_layer)

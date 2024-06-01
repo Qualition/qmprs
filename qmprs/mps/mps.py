@@ -465,9 +465,7 @@ class MPS:
     # TODO: Redo the comments for better clarity.
     def _generate_two_site_unitary(self,
                                    mps_data: NDArray[np.complex128],
-                                   generated_unitaries: list[qtn.Tensor],
-                                   isometries: list[NDArray],
-                                   kernels: list[NDArray]) -> list:
+                                   generated_unitaries: list[qtn.Tensor]) -> list[qtn.Tensor]:
         """ Generate a two site unitary for a given tensor in the MPS.
 
         Parameters
@@ -476,19 +474,11 @@ class MPS:
             The data of the MPS tensor at the specified index.
         generated_unitaries : list[qtn.Tensor]
             The list of generated unitaries.
-        isometries : list[NDArray]
-            The list of isometries.
-        kernels : list[NDArray]
-            The list of kernels.
 
         Returns
         -------
         `generated_unitaries` : list[qtn.Tensor]
             The list of generated unitaries.
-        `isometries` : list[NDArray]
-            The list of isometries.
-        `kernels` : list[NDArray]
-            The list of kernels.
         """
         # Define the physical dimension of the MPS
         phy_dim = self.physical_dimension
@@ -519,35 +509,12 @@ class MPS:
         # Append the unitary to the list of generated unitaries
         generated_unitaries.append(unitary)
 
-        # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-        unitary = unitary.data.T.reshape(phy_dim, phy_dim, phy_dim, phy_dim) # type: ignore
-
-        # Get the kernel from the unitary
-        kernel = unitary[:, 1, :, :].reshape(2, 4).T
-
-        # Multiply the kernel by 1/exp(1j * angle of the first row of the kernel)
-        kernel = kernel * (1 / np.exp(1j * np.angle(kernel[0, :])))
-
-        # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
-        [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
-
-        # Define the isometry from the eigenvectors and their corresponding eigenvalues
-        isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
-
-        # Append the isometry to the list of isometries
-        isometries.append(isometry)
-
-        # Append the kernel to the list of kernels
-        kernels.append(kernel)
-
-        return [generated_unitaries, isometries, kernels]
+        return generated_unitaries
 
     # TODO: Redo the comments for better clarity.
     def _generate_first_site_unitary(self,
                                      mps_data: np.ndarray,
-                                     generated_unitaries: list[qtn.Tensor],
-                                     isometries: list[NDArray[np.number]],
-                                     kernels: list[NDArray[np.number]]) -> list:
+                                     generated_unitaries: list[qtn.Tensor]) -> list[qtn.Tensor]:
         """ Generate the first site unitary for a given tensor in the MPS.
 
         Parameters
@@ -556,19 +523,11 @@ class MPS:
             The data of the MPS tensor at the specified index.
         generated_unitaries : List[qtn.Tensor]
             The list of generated unitaries.
-        isometries : list[NDArray[np.number]]
-            The list of isometries.
-        kernels : list[NDArray[np.number]]
-            The list of kernels.
 
         Returns
         -------
         `generated_unitaries` : list[qtn.Tensor]
             The list of generated unitaries.
-        `isometries` : list[NDArray]
-            The list of isometries.
-        `kernels` : list[NDArray]
-            The list of kernels.
         """
         # Define the physical dimension of the MPS
         phy_dim = self.physical_dimension
@@ -609,35 +568,14 @@ class MPS:
         # Append the unitary to the list of generated unitaries
         generated_unitaries.append(unitary)
 
-        # Reshape the unitary to (d x d x d x d) where d is the physical dimension
-        unitary = unitary.data.T.reshape((phy_dim, phy_dim, phy_dim, phy_dim)) # type: ignore
-
-        # Get the kernel from the unitary
-        kernel = unitary[:, 1, :, :].reshape(2, 4).T
-        kernel = np.c_[unitary[1, 0, :, :].reshape(1, 4).T, kernel]
-
-        # Define the eigenvectors and their corresponding eigenvalues from the |kernel X kernel|
-        [eigenvalues, eigenvectors] = np.linalg.eigh(kernel @ np.conj(kernel.T))
-
-        # Define the isometry from the eigenvectors and their corresponding eigenvalues
-        isometry = eigenvectors[:, np.where(np.abs(eigenvalues) > 1e-12)].reshape(4, -1)
-
-        # Append the isometry to the list of isometries
-        isometries.append(isometry)
-
-        # Append the kernel to the list of kernels
-        kernels.append(kernel)
-
-        return [generated_unitaries, isometries, kernels]
+        return generated_unitaries
 
     # TODO: Redo the comments for better clarity.
     def _generate_single_site_unitary(self,
                                       mps_data: NDArray[np.complex128],
                                       start_index: int,
                                       end_index: int,
-                                      generated_unitaries: list[qtn.Tensor],
-                                      isometries: list[NDArray],
-                                      kernels: list[NDArray]) -> list:
+                                      generated_unitaries: list[qtn.Tensor]) -> list[qtn.Tensor]:
         """ Generate a single site unitary for a given tensor in the MPS.
 
         Parameters
@@ -650,19 +588,11 @@ class MPS:
             The ending index of the sub-MPS.
         generated_unitaries : List[qtn.Tensor]
             The list of generated unitaries.
-        isometries : list[NDArray]
-            The list of isometries.
-        kernels : list[NDArray]
-            The list of kernels.
 
         Returns
         -------
         `generated_unitaries` : list[qtn.Tensor]
             The list of generated unitaries.
-        `isometries` : list[NDArray]
-            The list of isometries.
-        `kernels` : list[NDArray]
-            The list of kernels.
         """
         # Define the physical dimension of the MPS
         phy_dim = self.physical_dimension
@@ -688,11 +618,7 @@ class MPS:
         # Append the unitary to the list of generated unitaries
         generated_unitaries.append(unitary)
 
-        # Append the blank isometries and kernels to the lists (this is to ensure same length as the generated unitaries)
-        isometries.append(np.array([]))
-        kernels.append(np.array([]))
-
-        return [generated_unitaries, isometries, kernels]
+        return generated_unitaries
 
     def generate_unitaries(self) -> list:
         """ Generate the unitaries of the MPS.
@@ -701,6 +627,11 @@ class MPS:
         -------
         `generated_unitary_list` : list
             A list of unitaries to be applied to the MPS.
+
+        Raises
+        ------
+        ValueError
+            If all the generated unitaries are not unitary.
 
         Usage
         -----
@@ -717,40 +648,37 @@ class MPS:
 
         # Iterate over the tensors' starting and ending indices
         for start_index, end_index in sub_mps_indices:
-            generated_unitaries: list = []
-            isomsetries: list = []
-            kernels: list = []
+            generated_unitaries: list[qtn.Tensor] = []
 
             # Iterate over the range from start_index to end_index (inclusive)
             for index in range(start_index, end_index + 1):
                 if index == end_index:
                     # Generate a single site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_single_site_unitary(mps_copy[index].data,
-                                                                                                   start_index,
-                                                                                                   end_index,
-                                                                                                   generated_unitaries,
-                                                                                                   isomsetries,
-                                                                                                   kernels)
+                    generated_unitaries = self._generate_single_site_unitary(mps_copy[index].data,
+                                                                             start_index,
+                                                                             end_index,
+                                                                             generated_unitaries)
 
                 elif index != start_index:
                     # Generate a two site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_two_site_unitary(mps_copy[index].data,
-                                                                                                generated_unitaries,
-                                                                                                isomsetries,
-                                                                                                kernels)
+                    generated_unitaries = self._generate_two_site_unitary(mps_copy[index].data,
+                                                                          generated_unitaries)
 
                 else:
                     # Generate a first site unitary for the current tensor
-                    generated_unitaries, isomsetries, kernels = self._generate_first_site_unitary(mps_copy[index].data,
-                                                                                                  generated_unitaries,
-                                                                                                  isomsetries,
-                                                                                                  kernels)
+                    generated_unitaries = self._generate_first_site_unitary(mps_copy[index].data,
+                                                                            generated_unitaries)
+
+            # Check if all the generated unitaries are unitary
+            for generated_unitary in generated_unitaries:
+                if not np.allclose(np.eye(generated_unitary.shape[0]) - generated_unitary.data @ generated_unitary.data.T.conj(), 0):
+                    raise ValueError("ValueError : every generated unitary in the list must be a unitary.")
+                if not np.allclose(np.eye(generated_unitary.shape[0]) - generated_unitary.data.T.conj() @ generated_unitary.data, 0):
+                    raise ValueError("ValueError : every generated unitary in the list must be a unitary.")
 
             generated_unitary_list.append([start_index,
                                            end_index,
-                                           generated_unitaries,
-                                           isomsetries,
-                                           kernels])
+                                           generated_unitaries])
 
         return generated_unitary_list
 
@@ -791,7 +719,7 @@ class MPS:
             A list of unitaries to be applied to the MPS.
         """
         # Iterate over the generated unitary list and the start and end indices
-        for start_index, end_index, generated_unitaries, _, _ in generated_unitary_list:
+        for start_index, end_index, generated_unitaries in generated_unitary_list:
             # Iterate over the indices of the MPS
             for index in range(start_index, end_index + 1):
                 # If the index is the end index
@@ -838,7 +766,7 @@ class MPS:
             A list of unitaries to be applied to the MPS.
         """
         # Iterate over the generated unitary list and the start and end indices
-        for start_index, end_index, generate_unitaries, _, _ in generated_unitary_list:
+        for start_index, end_index, generate_unitaries in generated_unitary_list:
             # Iterate over the indices of the MPS in reverse order
             for index in list(reversed(range(start_index, end_index + 1))):
                 # If the index is the end index
@@ -926,7 +854,7 @@ class MPS:
             The unitary layer to be applied to the circuit.
         """
         # Iterate over the generated unitary list
-        for start_index, end_index, generated_unitaries, _, _ in unitary_layer:
+        for start_index, end_index, generated_unitaries in unitary_layer:
             # Iterate over the start and end indices
             for index in range(start_index, end_index + 1):
                 # Define the unitary matrix
@@ -940,7 +868,6 @@ class MPS:
                 else:
                     circuit.unitary(unitary, [index + 1, index])
 
-    # NOTE: Consider creating a primitive class called `UnitaryLayer`, since unitary_layer is not simply a unitary matrix (it has isometries, kernels, and start and end indices).
     def circuit_from_unitary_layers(self,
                                     qc_framework: Type[Circuit],
                                     unitary_layers: list[list]) -> Circuit:
