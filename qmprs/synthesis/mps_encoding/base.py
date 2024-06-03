@@ -110,4 +110,3 @@ class MPSEncoder(ABC):
         -----
         >>> circuit = encoder.prepare_mps(mps, **kwargs)
         """
-        pass

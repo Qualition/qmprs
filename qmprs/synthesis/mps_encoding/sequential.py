@@ -59,6 +59,10 @@ class Sequential(MPSEncoder):
         # Define the number of layers
         num_layers = kwargs.get("num_layers")
 
+        # Check if the number of layers is a positive integer
+        if not isinstance(num_layers, int) or num_layers < 1:
+            raise ValueError("The number of layers must be a positive integer.")
+
         # Normalize the MPS
         mps.normalize()
 
@@ -89,11 +93,10 @@ class Sequential(MPSEncoder):
 
             # Permute the arrays to the left-right canonical form
             mps.permute(shape="lpr")
-            mps.canonicalize("right")
-            mps.normalize()
+            mps.canonicalize("right", normalize=True)
 
             # Iterate over the number of layers
-            for _ in range(num_layers): # type: ignore
+            for _ in range(num_layers):
                 # Generate the unitary for the bond-d (physical dimension) compression of the MPS.
                 unitary_layer = mps.generate_bond_d_unitary()
 
@@ -119,5 +122,4 @@ class Sequential(MPSEncoder):
         # Apply a vertical reverse
         circuit.vertical_reverse()
 
-        # Return the overlap and circuit
         return circuit

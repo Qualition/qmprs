@@ -66,4 +66,31 @@ class TreeRG(MPSEncoder):
         `block_size` : int
             The block size. Passed as a kwarg.
         """
-        pass
+        # Define the block size
+        block_size = kwargs.get("block_size")
+
+        # Check if the block size is positive integer
+        if not isinstance(block_size, int) or block_size < 1:
+            raise ValueError("The block size must be a positive integer.")
+
+        # Check if the block size divides the number of sites
+        if mps.num_sites % block_size != 0:
+            raise ValueError("The block size must divide the number of sites.")
+
+        # Normalize the MPS
+        mps.normalize()
+
+        # Compress the MPS to canonical form
+        mps.compress(mode="right")
+
+        # Block/contract the MPS sites, and then polar decompose
+        for site in range(0, mps.num_sites, block_size):
+            mps.contract_site(range(site, site + block_size))
+            mps.polar_decompose(range(site, site + block_size))
+
+        # Define the circuit to prepare the MPS
+        circuit = self.circuit_framework(mps.num_sites, mps.num_sites)
+
+        # TODO: Implement the Tree-RG encoding circuit
+
+        return circuit
