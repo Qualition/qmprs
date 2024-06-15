@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["mpo",
-           "mps",
+__all__ = ["mps",
            "synthesis",]
 
-from qmprs import mpo, mps, synthesis
+from qmprs import mps, synthesis
