@@ -196,65 +196,6 @@ class MPS:
 
         return statevector
 
-    @staticmethod
-    def from_operator(operator: NestedCollection[NumberType]) -> qtn.MatrixProductState:
-        """ Define the MPS from the operator.
-
-        Parameters
-        ----------
-        `operator` : NestedCollection[NumberType]
-            The operator of the quantum system.
-
-        Returns
-        -------
-        `mps` : qtn.MatrixProductState
-            The MPS representation of the operator.
-
-        Raises
-        ------
-        ValueError
-            If the operator is not unitary.
-
-        Usage
-        -----
-        >>> operator = np.array([[1, 0], [0, 1]])
-        >>> mps = MPS.from_operator(operator)
-        """
-        operator: np.ndarray = np.array(operator, dtype=np.complex128)
-
-        # Check if the operator is unitary
-        if not np.allclose(np.eye(operator.shape[0]) - operator.data @ operator.data.T.conj(), 0):
-            raise ValueError("ValueError : The operator must be a unitary.")
-        if not np.allclose(np.eye(operator.shape[0]) - operator.data.T.conj() @ operator.data, 0):
-            raise ValueError("ValueError : The operator must be a unitary.")
-
-        # Define the number of sites
-        num_sites = int(np.log2(operator.shape[0]))
-
-        # Reshape the operator to N sites where N is the number of qubits
-        # needed to represent the operator
-        site_dimensions = [2] * num_sites
-
-        # Generate MPO from the tensor arrays
-        mpo = qtn.MatrixProductOperator.from_dense(operator, site_dimensions)
-
-        # Fuse the legs of the MPO to construct the MPS
-        for site in mpo.sites:
-            t = mpo[site]
-            # Define the current 'ket' and 'bra' indices
-            ket_index = mpo.upper_ind(site)
-            bra_index = mpo.lower_ind(site)
-            # Define the desired 'physical' index
-            physical_index = f"k{site}"
-            # Fuse the indices (synonymous to reshaping or merging)
-            t.fuse_({physical_index: [ket_index, bra_index]})
-
-        # Define MPS form of the MPO with physical index size 4
-        # (as input and output indices each had a dimension of 2)
-        mps = mpo.view_as_(qtn.MatrixProductState, site_ind_id="k{}")
-
-        return mps
-
     def normalize(self) -> None:
         """ Normalize the MPS.
 
