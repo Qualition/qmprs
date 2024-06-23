@@ -886,7 +886,7 @@ class MPS:
             The quantum circuit.
         """
         # Define the quantum circuit
-        circuit = qc_framework(self.num_sites, self.num_sites)
+        circuit = qc_framework(self.num_sites)
 
         # Iterate over the unitary layers in reverse order and apply the unitary layer
         for layer in reversed(range(len(unitary_layers))):

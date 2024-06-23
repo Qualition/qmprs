@@ -70,7 +70,7 @@ class Sequential(MPSEncoder):
         mps.compress(mode="right")
 
         # Define the circuit to prepare the MPS
-        circuit = self.circuit_framework(mps.num_sites, mps.num_sites)
+        circuit = self.circuit_framework(mps.num_sites)
 
         def sequential_unitary_circuit(mps: MPS,
                                        circuit: Circuit) -> Circuit:
