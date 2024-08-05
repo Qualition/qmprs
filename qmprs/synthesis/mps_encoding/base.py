@@ -17,18 +17,12 @@ from __future__ import annotations
 __all__ = ["MPSEncoder"]
 
 from abc import ABC, abstractmethod
-from typing import Type
-
-# Import `qickit.data.Data`
-from qickit.data import Data # type: ignore
-
-# Import `qickit.circuit.Circuit`
+import numpy as np
+from numpy.typing import NDArray
+from typing import Type, Literal
 from qickit.circuit import Circuit # type: ignore
+from qickit.primitives import Ket # type: ignore
 
-# Import `qickit.types.collection.NestedCollection`
-from qickit.types import NestedCollection # type: ignore
-
-# Import `qmprs.mps.MPS`
 from qmprs.mps import MPS
 
 
@@ -38,8 +32,17 @@ class MPSEncoder(ABC):
 
     Parameters
     ----------
-    `circuit_framework` : Type[Circuit]
+    `circuit_framework` : type[qickit.circuit.Circuit]
         The quantum circuit framework.
+
+    Attributes
+    ----------
+    `circuit_framework` : type[qickit.circuit.Circuit]
+        The quantum circuit framework.
+
+    Usage
+    -----
+    >>> encoder = MPSEncoder(Circuit)
     """
     def __init__(self,
                  circuit_framework: Type[Circuit]) -> None:
@@ -48,25 +51,30 @@ class MPSEncoder(ABC):
         self.circuit_framework = circuit_framework
 
     def prepare_state(self,
-                      statevector: Data | NestedCollection,
+                      statevector: Ket | NDArray[np.complex128],
                       bond_dimension: int,
                       compression_percentage: float=0.0,
-                      index_type: str="row",
+                      index_type: Literal["row", "snake"]="row",
                       **kwargs) -> Circuit:
         """ Prepare the quantum state using statevector.
 
         Parameters
         ----------
-        `statevector` : qickit.data.Data | NestedCollection[NumberType]
+        `statevector` : qickit.primitives.Ket | NDArray[np.complex128]
             The statevector of the quantum system.
         `bond_dimension` : int
             The maximum bond dimension.
         `compression_percentage` : float
             The compression percentage.
-        `index_type` : str
+        `index_type` : Literal["row", "snake"], optional, default="row"
             The indexing type.
         `**kwargs`
             Additional keyword arguments.
+
+        Returns
+        -------
+        `circuit` : qickit.circuit.Circuit
+            The quantum circuit.
 
         Usage
         -----
@@ -76,21 +84,16 @@ class MPSEncoder(ABC):
         ...                                 index_type,
         ...                                 **kwargs)
         """
-        # Check if the statevector is a `Data` instance
-        if not isinstance(statevector, Data):
-            statevector = Data(statevector)
+        if not isinstance(statevector, Ket):
+            statevector = Ket(statevector)
 
-        # Change the indexing (if necessary)
-        statevector.change_indexing(index_type)
+        statevector.change_indexing(index_type) # type: ignore
 
-        # Compress the statevector
         if compression_percentage > 0.0:
             statevector.compress(compression_percentage)
 
-        # Define an `qmprs.mps.MPS` instance
         mps = MPS(statevector, bond_dimension=bond_dimension)
 
-        # Prepare the MPS
         return self.prepare_mps(mps, **kwargs)
 
     @abstractmethod
@@ -105,6 +108,11 @@ class MPSEncoder(ABC):
             The MPS to be prepared.
         `**kwargs`
             Additional keyword arguments.
+
+        Returns
+        -------
+        `circuit` : qickit.circuit.Circuit
+            The quantum circuit.
 
         Usage
         -----

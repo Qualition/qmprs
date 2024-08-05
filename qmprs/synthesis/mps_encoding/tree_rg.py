@@ -52,35 +52,35 @@ class TreeRG(MPSEncoder):
     ----------
     `circuit_framework` : Type[Circuit]
         The quantum circuit framework.
+
+    Attributes
+    ----------
+    `circuit_framework` : Type[Circuit]
+        The quantum circuit framework.
+
+    Raises
+    ------
+    ValueError
+        If the block size is not a positive integer.
+        If the block size does not divide the number of sites.
+
+    Usage
+    -----
+    >>> tree_rg = TreeRG(Circuit)
     """
     # TODO
     def prepare_mps(self,
                     mps: MPS,
                     **kwargs) -> Circuit:
-        """ Prepare the quantum state using MPS.
-
-        Parameters
-        ----------
-        `mps` : qmprs.mps.MPS
-            The MPS to be prepared.
-        `block_size` : int
-            The block size. Passed as a kwarg.
-        """
-        # Define the block size
         block_size = kwargs.get("block_size")
 
-        # Check if the block size is positive integer
         if not isinstance(block_size, int) or block_size < 1:
             raise ValueError("The block size must be a positive integer.")
 
-        # Check if the block size divides the number of sites
         if mps.num_sites % block_size != 0:
             raise ValueError("The block size must divide the number of sites.")
 
-        # Normalize the MPS
         mps.normalize()
-
-        # Compress the MPS to canonical form
         mps.compress(mode="right")
 
         # Block/contract the MPS sites, and then polar decompose

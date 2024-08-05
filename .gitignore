@@ -258,5 +258,6 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks,visualstudiocode,osx,windows
 
 # Project-specific
-
+tests
+.temp
 sketches_rough_stuff/
