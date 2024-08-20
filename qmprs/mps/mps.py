@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 import quimb.tensor as qtn # type: ignore
 from scipy import linalg # type: ignore
-from typing import Literal, Type, SupportsComplex
+from typing import Literal, Type, SupportsComplex, SupportsIndex
 from qickit.circuit import Circuit # type: ignore
 from qickit.primitives import Ket # type: ignore
 
@@ -105,7 +105,7 @@ class MPS:
         `bond_dimension` must be an integer greater than 0.
         Cannot initialize with both `statevector` and `mps`.
         Must provide either `statevector` or `mps`.
-        Only supports MPS with physical dimension=2.
+        Only supports MPS with physical dimension of 2.
 
     Usage
     -----
@@ -121,7 +121,7 @@ class MPS:
         """ Initialize a `qmprs.mps.MPS` instance. Pass only `statevector` to define
         the MPS from the statevector. Pass only `mps` to define the MPS from the MPS.
         """
-        if not isinstance(bond_dimension, int) or bond_dimension < 1:
+        if not isinstance(bond_dimension, SupportsIndex) or bond_dimension < 1:
             raise ValueError("`bond_dimension` must be an integer greater than 0.")
 
         if statevector is not None and mps is not None:
@@ -156,9 +156,8 @@ class MPS:
         # The physical dimension must be equal to two, given we define the synthesis
         # for qubit-based paradigms
         if self.mps.phys_dim() != 2:
-            raise ValueError("Only supports MPS with physical dimension=2.")
-        else:
-            self.physical_dimension = 2
+            raise ValueError("Only supports MPS with physical dimension of 2.")
+        self.physical_dimension = 2
 
     @staticmethod
     def from_statevector(statevector: Ket,
@@ -187,7 +186,7 @@ class MPS:
         mps = qtn.MatrixProductState.from_dense(statevector.data)
 
         # Compress the bond dimension of the MPS to the maximum bond dimension specified
-        # This is to ensure the resulting MPS' bond dimension is equal to the maximum
+        # This is to ensure the resulting MPS bond dimension is equal to the maximum
         # bond dimension specified during initialization
         for i in range(num_sites-1):
             qtn.tensor_core.tensor_compress_bond(mps[i], mps[i+1], max_bond=max_bond_dimension)
@@ -360,7 +359,28 @@ class MPS:
                        index: str) -> None:
         """ Contract tensors connected by the given index.
 
-        # TODO: Add Figure
+        Notes
+        -----
+        Tensor contraction is performed when two tensors share a common index or
+        when a single tensor has two identical indices.
+
+        For instance, a 4th order tensor $T_{ijkl}$ can be contracted into $T_{jl}$ given
+        $i$ and $k$ being identical by summing over the values of index $i$. The resulting
+        tensor will be of order 2.
+
+        We perform contraction for a single tensor by the following steps:
+        1) Choose two indices to contract. $T_{ijkl}$ -> choose $i$ and $k$.
+        2) Set these indices as equal. $T_{ijkl}$ -> $T_{ijil}$.
+        3) Sum over this index. Assume $i = {1, 2, 3}$, so $T_{ijil} = T_{1j1l} + T_{2j2l} + T_{3j3l}$.
+
+        Using the Einstein summation convention, we can represent this as simply $T_{jl}$.
+
+        Furthermore, we perform contraction for two tensors by the following steps:
+        1) Choose a common index between two tensors. $A_{ij} \otimes v_{l}$ -> choose $l = j$.
+        2) Set these indices as equal. $A_{ij} \otimes v_{l}$ -> $A_{ij} \otimes v_{j}$.
+        3) Sum over this index. Assume $j = {1, 2, 3}$, so $A_{ij} \otimes v_{j} = A_{i1} \otimes v_{1} + A_{i2} \otimes v_{2} + A_{i3} \otimes v_{3}$.
+
+        The result is a 1st order tensor $u_i$. This is the same as performing matrix-vector multiplication.
 
         Parameters
         ----------
@@ -497,26 +517,28 @@ class MPS:
             The list of generated unitaries.
         """
         phy_dim = self.physical_dimension
-
-        # Unitary is a tensor of dimension 2 x 2 x 2 x 2 (ndim = 4)
         unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
 
+        # Construct the orthonormal basis of the MPS using SVD
+        orthonormal_basis = linalg.null_space(mps_data.reshape((phy_dim, -1)).conj())
+
+        # Define the angle rotation for the orthonormal basis
+        angle_rotation = np.exp(1j * np.angle(orthonormal_basis[0]))
+
+        # Normalize the orthonormal basis
+        orthonormal_basis = orthonormal_basis / angle_rotation
+
         # Set the first row of the unitary to the MPS tensor at the specified site
+        # Given the physical dimension will always be equal to 2, we omit unitary[1:phy_dim]
+        # to unitary[1] and explicitly set the value
         unitary[0] = mps_data
-
-        # Set the second axis of the unitary to the null space of the MPS tensor at the specified site
-        kernel = linalg.null_space(mps_data.reshape((phy_dim, -1)).conj())
-
-        kernel_angle_rotation = np.exp(1j * np.angle(kernel[0]))
-        kernel = kernel * (1 / kernel_angle_rotation)
-
-        unitary[1:phy_dim] = kernel.reshape((phy_dim, phy_dim, phy_dim, phy_dim - 1)).transpose((3, 2, 0, 1))
+        unitary[1] = orthonormal_basis.reshape((phy_dim, phy_dim, phy_dim, phy_dim - 1)).transpose((3, 2, 0, 1))
 
         # Transpose the unitary, such that the indices of the unitary are ordered as unitary(B,L,R,T)
         unitary = unitary.transpose((1, 0, 2, 3))
 
         # Convert the unitary to a qtn.Tensor
-        # .T at the end is useful for the application of unitaries as quantum circuit
+        # .T at the end is useful for the application of unitaries as quantum circuit gates
         unitary = qtn.Tensor(
             unitary.reshape((phy_dim**2, phy_dim**2)).T, # type: ignore
             inds=["L", "R"],
@@ -547,25 +569,21 @@ class MPS:
         phy_dim = self.physical_dimension
         unitary = np.zeros((phy_dim, phy_dim, phy_dim, phy_dim), dtype=np.complex128)
 
-        # Set the first and second axes of the unitary to the data of the MPS at the specified index
+        # Construct the orthonormal basis of the MPS using SVD
+        orthonormal_basis = linalg.null_space(mps_data.reshape((1, -1)).conj())
+
+        # Given the physical dimension will always be equal to 2, we omit the loop and explicitly set the values
+        # for faster computation
         unitary[0, 0] = mps_data.reshape((phy_dim, -1))
-
-        # Get the kernel from the data of the MPS at the specified index
-        kernel = linalg.null_space(mps_data.reshape((1, -1)).conj())
-
-        # TODO: Vectorize this loop
-        for i in range(phy_dim):
-            for j in range(phy_dim):
-                if i == 0 and j == 0:
-                    continue
-                index = i * phy_dim + j
-                unitary[i, j] = kernel[:, index - 1].reshape((phy_dim, phy_dim))
+        unitary[0, 1] = orthonormal_basis[:, 0].reshape((phy_dim, phy_dim))
+        unitary[1, 0] = orthonormal_basis[:, 1].reshape((phy_dim, phy_dim))
+        unitary[1, 1] = orthonormal_basis[:, 2].reshape((phy_dim, phy_dim))
 
         # Transpose the unitary, such that the indices of the unitary are ordered as unitary(B,L,R,T)
         unitary = unitary.transpose((1, 0, 2, 3))
 
         # Convert the unitary to a qtn.Tensor
-        # .T at the end is useful for the application of unitaries as quantum circuit
+        # .T at the end is useful for the application of unitaries as quantum circuit gates
         unitary = qtn.Tensor(
             unitary.reshape((phy_dim**2, phy_dim**2)).T, # type: ignore
             inds=["L", "R"],
@@ -779,7 +797,7 @@ class MPS:
 
     def apply_unitary_layer(self,
                             unitary_layer: list,
-                            inverse: bool = False) -> None:
+                            inverse: bool=False) -> None:
         """ Apply the unitary layer on the MPS. If inverse is True,
         we apply the inverse of the unitary layer to the MPS.
 
@@ -801,7 +819,7 @@ class MPS:
 
     def apply_unitary_layers(self,
                              unitary_layers: list[list],
-                             inverse: bool = False) -> None:
+                             inverse: bool=False) -> None:
         """ Apply the unitary layers on the MPS. If inverse is True,
         we apply the inverse of the unitary layers in reverse order
         to the MPS.

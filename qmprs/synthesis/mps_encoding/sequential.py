@@ -17,6 +17,7 @@ from __future__ import annotations
 __all__ = ["Sequential"]
 
 import copy
+from typing import SupportsIndex
 from qickit.circuit import Circuit # type: ignore
 
 from qmprs.mps import MPS
@@ -55,9 +56,10 @@ class Sequential(MPSEncoder):
     The algorithm was designed for long-range correlation and follows a unitary-only
     operation approach which limits the efficiency of the encoding. The number of layers
     scale linearly with the circuit depth, and exponentially with the number of sites.
-    However, the exponential growth is significantly reduced by the MPS representation,
-    which allows for increasingly efficient encoding of quantum states as we scale the
-    number of sites when compared to exact encoding schema such as Mottonen or Shende.
+    However, the exponential growth is significantly reduced by the low-rank structure of
+    the MPS representation, which allows for increasingly efficient encoding of quantum
+    states as we scale the number of sites when compared to exact encoding schema such
+    as Mottonen or Shende.
 
     Parameters
     ----------
@@ -83,7 +85,7 @@ class Sequential(MPSEncoder):
                     **kwargs) -> Circuit:
         num_layers = kwargs.get("num_layers")
 
-        if not isinstance(num_layers, int) or num_layers < 1:
+        if not isinstance(num_layers, SupportsIndex) or num_layers < 1: # type: ignore
             raise ValueError("The number of layers must be a positive integer.")
 
         # Create a copy of the MPS as the operations are applied inplace
