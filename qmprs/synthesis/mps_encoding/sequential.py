@@ -94,11 +94,7 @@ class Sequential(MPSEncoder):
         mps_copy.normalize()
         mps_copy.compress(mode="right")
 
-        # Define the circuit to prepare the MPS
-        circuit = self.circuit_framework(mps_copy.num_sites)
-
-        def sequential_unitary_circuit(mps: MPS,
-                                       circuit: Circuit) -> Circuit:
+        def sequential_unitary_circuit(mps: MPS) -> Circuit:
             """ Construct the unitary matrix product operators that optimally disentangle
             the MPS to a product state. These matrix product operators form the quantum
             circuit that evolves a product state to the targeted MPS.
@@ -107,8 +103,6 @@ class Sequential(MPSEncoder):
             ----------
             `mps` : qmprs.mps.MPS
                 The MPS state.
-            `circuit` : qickit.circuit.Circuit
-                The quantum circuit.
 
             Returns
             -------
@@ -127,12 +121,12 @@ class Sequential(MPSEncoder):
                 mps.canonicalize(mode="right", normalize=True)
                 mps.compress()
 
-            circuit.add(mps.circuit_from_unitary_layers(type(circuit), unitary_layers), range(mps.num_sites))
+            circuit = mps.circuit_from_unitary_layers(self.circuit_framework, unitary_layers)
             circuit.vertical_reverse()
 
-        sequential_unitary_circuit(mps_copy, circuit)
+            # Transpile the circuit to merge the sequence of U3 gates into a single U3 gate
+            # circuit.transpile()
 
-        # Transpile the circuit to merge the sequence of U3 gates into a single U3 gate
-        circuit.transpile()
+            return circuit
 
-        return circuit
+        return sequential_unitary_circuit(mps_copy)

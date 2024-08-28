@@ -657,7 +657,7 @@ class MPS:
         >>> mps.generate_unitaries()
         """
         # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = copy.deepcopy(self.mps)
+        mps_copy = self.mps.copy(deep=True)
 
         generated_unitary_list = []
 
@@ -839,8 +839,8 @@ class MPS:
             self.apply_unitary_layer(layer, inverse=inverse)
 
     @staticmethod
-    def _circuit_from_unitary_layer(circuit: Circuit,
-                                    unitary_layer: list) -> None:
+    def _apply_unitary_layer_to_circuit(circuit: Circuit,
+                                        unitary_layer: list) -> None:
         """ Apply a unitary layer to the quantum circuit.
 
         Parameters
@@ -860,13 +860,13 @@ class MPS:
                     circuit.unitary(unitary, [index + 1, index])
 
     def circuit_from_unitary_layers(self,
-                                    qc_framework: Type[Circuit],
+                                    circuit_framework: type[Circuit],
                                     unitary_layers: list[list]) -> Circuit:
         """ Generate a quantum circuit from the MPS unitary layers.
 
         Parameters
         ----------
-        `qc_framework` : type[qickit.circuit.Circuit]
+        `circuit_framework` : type[qickit.circuit.Circuit]
             The quantum circuit framework.
         `unitary_layers` : list[list]
             A list of unitary layers to be applied to the circuit.
@@ -874,12 +874,12 @@ class MPS:
         Returns
         -------
         `circuit` : qickit.circuit.Circuit
-            The quantum circuit.
+            The quantum circuit with the unitary layers applied.
         """
-        circuit = qc_framework(self.num_sites)
+        circuit = circuit_framework(self.num_sites)
 
         for layer in reversed(unitary_layers):
-            MPS._circuit_from_unitary_layer(circuit, layer)
+            MPS._apply_unitary_layer_to_circuit(circuit, layer)
 
         return circuit
 
