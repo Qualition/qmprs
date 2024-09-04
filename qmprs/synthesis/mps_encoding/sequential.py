@@ -119,7 +119,6 @@ class Sequential(MPSEncoder):
                 unitary_layers.append(unitary_layer)
                 mps.apply_unitary_layer(unitary_layer, inverse=True)
                 mps.canonicalize(mode="right", normalize=True)
-                mps.compress()
 
             circuit = mps.circuit_from_unitary_layers(self.circuit_framework, unitary_layers)
             circuit.vertical_reverse()

@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 import quimb.tensor as qtn # type: ignore
 from scipy import linalg # type: ignore
-from typing import Literal, Type, SupportsComplex, SupportsIndex
+from typing import Literal, SupportsComplex, SupportsIndex
 from qickit.circuit import Circuit # type: ignore
 from qickit.primitives import Ket # type: ignore
 
