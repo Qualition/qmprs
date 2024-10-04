@@ -16,13 +16,9 @@ from __future__ import annotations
 
 __all__ = ["TreeRG"]
 
-# Import `qickit.circuit.Circuit`
 from qickit.circuit import Circuit # type: ignore
 
-# Import `qmprs.mps.MPS`
 from qmprs.mps import MPS
-
-# Import `qmprs.synthesis.mps_encoding.MPSEncoder`
 from qmprs.synthesis.mps_encoding import MPSEncoder
 
 
@@ -69,9 +65,12 @@ class TreeRG(MPSEncoder):
     >>> tree_rg = TreeRG(Circuit)
     """
     # TODO
-    def prepare_mps(self,
-                    mps: MPS,
-                    **kwargs) -> Circuit:
+    def prepare_mps(
+            self,
+            mps: MPS,
+            **kwargs
+        ) -> Circuit:
+
         block_size = kwargs.get("block_size")
 
         if not isinstance(block_size, int) or block_size < 1:

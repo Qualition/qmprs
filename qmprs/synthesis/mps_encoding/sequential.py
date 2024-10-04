@@ -29,7 +29,16 @@ class Sequential(MPSEncoder):
     using Sequential encoding. The circuit is constructed using the disentangling
     algorithm described in the 2019 paper by Shi-Ju Ran.
 
-    [1] Ran, Shi-Ju. “Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates.”
+    We find the sequence of $\chi$ by $\chi$ unitary matrices that optimally disentangle
+    the MPS to the product state |00...0>. We compress the max bond dimension to 2, so
+    that we would only use one and two qubit gates. We then reverse the sequence to obtain
+    the quantum circuit that prepares the MPS from the product state.
+
+    Each layer disentangles the MPS further, and depending on how entangled an MPS is, or
+    how large, the number of layers needed to sufficiently disentangle the MPS will differ.
+
+    [1] Ran, Shi-Ju.
+    “Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates.” (2020).
     https://arxiv.org/abs/1908.07958
 
     Notes
@@ -80,9 +89,12 @@ class Sequential(MPSEncoder):
     -----
     >>> sequential = Sequential(Circuit)
     """
-    def prepare_mps(self,
-                    mps: MPS,
-                    **kwargs) -> Circuit:
+    def prepare_mps(
+            self,
+            mps: MPS,
+            **kwargs
+        ) -> Circuit:
+
         num_layers = kwargs.get("num_layers")
 
         if not isinstance(num_layers, SupportsIndex) or num_layers < 1: # type: ignore
@@ -95,14 +107,17 @@ class Sequential(MPSEncoder):
         mps_copy.compress(mode="right")
 
         def sequential_unitary_circuit(mps: MPS) -> Circuit:
-            """ Construct the unitary matrix product operators that optimally disentangle
-            the MPS to a product state. These matrix product operators form the quantum
+            """ Construct the unitary matrix products that optimally disentangle
+            the MPS to a product state. These matrix products form the quantum
             circuit that evolves a product state to the targeted MPS.
+
+            These unitary matrix products are referred to as MPDs in [1]. The method
+            implements the disentangling algorithm described in section 3 of [1].
 
             Parameters
             ----------
             `mps` : qmprs.mps.MPS
-                The MPS state.
+                The MPS state to prepare.
 
             Returns
             -------
@@ -111,20 +126,31 @@ class Sequential(MPSEncoder):
             """
             unitary_layers: list = []
 
+            # Permute the MPS to left orthogonal form
             mps.permute(shape="lpr")
+
+            # Normalize and convert to canonical form to represent the MPS using
+            # isometries
+            # This is needed for representing the MPS as a quantum circuit
             mps.canonicalize("right", normalize=True)
 
             for _ in range(num_layers):
-                unitary_layer = mps.generate_bond_d_unitary()
+                # Generate the bond 2 compression of the unitary layer
+                # to form one and two qubit gates given Fig. 1 in [1]
+                unitary_layer = mps.generate_bond_D_unitary_layer()
                 unitary_layers.append(unitary_layer)
+
+                # Given U*MPS = |00...0>, we need to apply the inverse of U
+                # to encode the MPS from the product state |00...0>
+                # MPS = U^adjoint * |00...0>
                 mps.apply_unitary_layer(unitary_layer, inverse=True)
-                mps.canonicalize(mode="right", normalize=True)
+
+            # Given the unitary layers when applied to the MPS disentangle the MPS
+            # to reach the product state |00...0>, we need to reverse the unitary layers
+            # to obtain the circuit that prepares the MPS from the product state
+            unitary_layers.reverse()
 
             circuit = mps.circuit_from_unitary_layers(self.circuit_framework, unitary_layers)
-            circuit.vertical_reverse()
-
-            # Transpile the circuit to merge the sequence of U3 gates into a single U3 gate
-            # circuit.transpile()
 
             return circuit
 

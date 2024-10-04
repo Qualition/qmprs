@@ -14,6 +14,6 @@
 
 __all__ = ["mpo",
            "mps",
-           "synthesis",]
+           "synthesis"]
 
 from qmprs import mpo, mps, synthesis

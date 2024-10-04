@@ -44,18 +44,22 @@ class MPSEncoder(ABC):
     -----
     >>> encoder = MPSEncoder(Circuit)
     """
-    def __init__(self,
-                 circuit_framework: Type[Circuit]) -> None:
+    def __init__(
+            self,
+            circuit_framework: Type[Circuit]
+        ) -> None:
         """ Initialize a `qickit.MPSEncoder` instance.
         """
         self.circuit_framework = circuit_framework
 
-    def prepare_state(self,
-                      statevector: Ket | NDArray[np.complex128],
-                      bond_dimension: int,
-                      compression_percentage: float=0.0,
-                      index_type: Literal["row", "snake"]="row",
-                      **kwargs) -> Circuit:
+    def prepare_state(
+            self,
+            statevector: Ket | NDArray[np.complex128],
+            bond_dimension: int,
+            compression_percentage: float=0.0,
+            index_type: Literal["row", "snake"]="row",
+            **kwargs
+        ) -> Circuit:
         """ Prepare the quantum state using statevector.
 
         Parameters
@@ -97,9 +101,11 @@ class MPSEncoder(ABC):
         return self.prepare_mps(mps, **kwargs)
 
     @abstractmethod
-    def prepare_mps(self,
-                    mps: MPS,
-                    **kwargs) -> Circuit:
+    def prepare_mps(
+            self,
+            mps: MPS,
+            **kwargs
+        ) -> Circuit:
         """ Prepare the quantum state using MPS.
 
         Parameters
