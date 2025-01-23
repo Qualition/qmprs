@@ -18,9 +18,9 @@ __all__ = ["Sequential"]
 
 import copy
 from typing import SupportsIndex
-from qickit.circuit import Circuit # type: ignore
+from quick.circuit import Circuit # type: ignore
 
-from qmprs.mps import MPS
+from qmprs.primitives.mps import MPS, UnitaryBlock, UnitaryLayer
 from qmprs.synthesis.mps_encoding import MPSEncoder
 
 
@@ -68,17 +68,28 @@ class Sequential(MPSEncoder):
     However, the exponential growth is significantly reduced by the low-rank structure of
     the MPS representation, which allows for increasingly efficient encoding of quantum
     states as we scale the number of sites when compared to exact encoding schema such
-    as Mottonen or Shende.
+    as Mottonen or Shende. Additionally, given the analytical decomposition employed,
+    the sequential encoding is computationally more efficient, however, that also means
+    that increasing the number of layers will only slightly improve the fidelity of the
+    encoding.
+
+    To achieve a higher fidelity within a reasonable circuit depth, we recommend
+    using the `qmprs.synthesis.mps_encoding.OptimizedSequential` encoding, which performs
+    optimization on the unitary layers to improve the overlap between the MPS encoded by
+    the circuit and the target MPS.
 
     Parameters
     ----------
-    `circuit_framework` : type[qickit.circuit.Circuit]
+    `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
 
     Attributes
     ----------
-    `circuit_framework` : type[qickit.circuit.Circuit]
+    `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
+    `fidelity_threshold` : float, optional, default=0.99
+        The fidelity threshold for the MPS encoding. The encoding stops when the fidelity
+        of the MPS with the product state is greater than or equal to the threshold.
 
     Raises
     ------
@@ -89,13 +100,22 @@ class Sequential(MPSEncoder):
     -----
     >>> sequential = Sequential(Circuit)
     """
+    def __init__(
+            self,
+            circuit_framework: type[Circuit]
+        ) -> None:
+
+        super().__init__(circuit_framework)
+
+        self.fidelity_threshold = 1 - 1e-6
+
     def prepare_mps(
             self,
             mps: MPS,
             **kwargs
         ) -> Circuit:
 
-        num_layers = kwargs.get("num_layers")
+        num_layers = kwargs.get("num_layers", 1)
 
         if not isinstance(num_layers, SupportsIndex) or num_layers < 1: # type: ignore
             raise ValueError("The number of layers must be a positive integer.")
@@ -103,8 +123,60 @@ class Sequential(MPSEncoder):
         # Create a copy of the MPS as the operations are applied inplace
         mps_copy = copy.deepcopy(mps)
 
-        mps_copy.normalize()
-        mps_copy.compress(mode="right")
+        def apply_unitary_layer_to_circuit(
+                circuit: Circuit,
+                unitary_layer: list[UnitaryBlock]
+            ) -> None:
+            """ Apply a unitary layer to the quantum circuit.
+
+            Parameters
+            ----------
+            `circuit` : quick.circuit.Circuit
+                The quantum circuit.
+            `unitary_layer` : list[qtn.Tensor]
+                The unitary layer to be applied to the circuit.
+            """
+            for start_index, end_index, unitary_blocks in unitary_layer:
+                for index in range(start_index, end_index + 1):
+                    unitary = unitary_blocks[index - start_index].data
+
+                    # To avoid having to perform a vertical reverse on the circuit for preserving LSB
+                    # convention, we will explicitly define the indices after the reverse operation
+                    # hence:
+                    # - Instead of applying the operation to index, we will apply it to
+                    # what index would be after the reverse operation, i.e. abs(index - (circuit.num_qubits - 1)
+                    # which is equivalent to abs(index - circuit.num_qubits + 1)
+                    # - Instead of applying the operation to index + 1, we will apply it to
+                    # what index + 1 would be after the reverse operation, i.e. abs(index + 2 - circuit.num_qubits)
+                    if index == end_index:
+                        circuit.unitary(unitary, abs(index - circuit.num_qubits + 1))
+                    else:
+                        circuit.unitary(unitary, [abs(index - circuit.num_qubits + 2), abs(index - circuit.num_qubits + 1)])
+
+        def circuit_from_unitary_layers(
+                circuit_framework: type[Circuit],
+                unitary_layers: list[list[UnitaryBlock]]
+            ) -> Circuit:
+            """ Generate a quantum circuit from the MPS unitary layers.
+
+            Parameters
+            ----------
+            `circuit_framework` : type[quick.circuit.Circuit]
+                The quantum circuit framework.
+            `unitary_layers` : list[list[qtn.Tensor]]
+                A list of unitary layers (list of unitaries) to be applied to the circuit.
+
+            Returns
+            -------
+            `circuit` : quick.circuit.Circuit
+                The quantum circuit with the unitary layers applied.
+            """
+            circuit = circuit_framework(mps.num_sites)
+
+            for layer in unitary_layers:
+                apply_unitary_layer_to_circuit(circuit, layer)
+
+            return circuit
 
         def sequential_unitary_circuit(mps: MPS) -> Circuit:
             """ Construct the unitary matrix products that optimally disentangle
@@ -116,41 +188,56 @@ class Sequential(MPSEncoder):
 
             Parameters
             ----------
-            `mps` : qmprs.mps.MPS
+            `mps` : qmprs.primitives.MPS
                 The MPS state to prepare.
 
             Returns
             -------
-            `circuit` : qickit.circuit.Circuit
+            `circuit` : quick.circuit.Circuit
                 The quantum circuit preparing the MPS.
             """
-            unitary_layers: list = []
+            unitary_layers: list[UnitaryLayer] = []
+
+            # Normalize and compress the MPS to the right orthogonal form
+            # This improves the fidelity of the encoding
+            mps_copy.normalize()
+            mps_copy.compress(mode="right")
 
             # Permute the MPS to left orthogonal form
             mps.permute(shape="lpr")
 
             # Normalize and convert to canonical form to represent the MPS using
             # isometries
-            # This is needed for representing the MPS as a quantum circuit
+            # This is needed to ensure the unitary layers are indeed unitary, so
+            # that we can convert them to quantum gates
             mps.canonicalize("right", normalize=True)
 
+            # The loop will run until either the MPS is sufficiently disentangled
+            # or the number of layers is reached
             for _ in range(num_layers):
                 # Generate the bond 2 compression of the unitary layer
                 # to form one and two qubit gates given Fig. 1 in [1]
                 unitary_layer = mps.generate_bond_D_unitary_layer()
                 unitary_layers.append(unitary_layer)
 
-                # Given U*MPS = |00...0>, we need to apply the inverse of U
-                # to encode the MPS from the product state |00...0>
-                # MPS = U^adjoint * |00...0>
+                # Given MPS = U|00...0>, we need to apply the inverse of U
+                # to disentangle the MPS to the product state |00...0>
+                # U^adjoint * MPS = |00...0>
+                # This updates the MPS definition for the next layer
                 mps.apply_unitary_layer(unitary_layer, inverse=True)
+
+                # If the fidelity of the MPS with the product state is greater
+                # than or equal to 0.99, we can break the loop as the MPS is
+                # sufficiently disentangled
+                if mps.fidelity_with_zero_state() >= self.fidelity_threshold:
+                    break
 
             # Given the unitary layers when applied to the MPS disentangle the MPS
             # to reach the product state |00...0>, we need to reverse the unitary layers
             # to obtain the circuit that prepares the MPS from the product state
             unitary_layers.reverse()
 
-            circuit = mps.circuit_from_unitary_layers(self.circuit_framework, unitary_layers)
+            circuit = circuit_from_unitary_layers(self.circuit_framework, unitary_layers)
 
             return circuit
 

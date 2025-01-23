@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+""" MPS module.
+
+This class wraps the quimb.tensor.MatrixProductState class to provide a more user-friendly
+interface for creating and manipulating MPS.
+
+Refer to the link below for more information on the quimb.tensor.MatrixProductState class.
+https://quimb.readthedocs.io/en/latest/autoapi/quimb/tensor/tensor_1d/index.html#quimb.tensor.tensor_1d.MatrixProductState
+"""
+
 from __future__ import annotations
 
 __all__ = ["MPS"]
@@ -26,10 +35,8 @@ import quimb.tensor as qtn # type: ignore
 from quimb.tensor.tensor_1d_compress import tensor_network_1d_compress # type: ignore
 from scipy import linalg # type: ignore
 from typing import Literal, SupportsIndex, TypeAlias
-from qickit.circuit import Circuit # type: ignore
-from qickit.circuit.circuit_utils import is_unitary_matrix # type: ignore
-from qickit.primitives import Ket # type: ignore
-
+from quick.predicates import is_unitary_matrix # type: ignore
+from quick.primitives import Ket # type: ignore
 
 """ Type aliases for unitary blocks and unitary layers.
 `UnitaryBlock`: A unitary block is a single unitary operator that acts on the MPS.
@@ -40,7 +47,7 @@ UnitaryLayer: TypeAlias = list[UnitaryBlock]
 
 
 class MPS:
-    """ `qmprs.mps.MPS` is the class for creating and manipulating matrix product states (MPS).
+    """ `qmprs.primitives.MPS` is the class for creating and manipulating matrix product states (MPS).
     This class wraps the `quimb.tensor.MatrixProductState` class to provide a more user-friendly
     interface for creating and manipulating MPS.
 
@@ -52,23 +59,33 @@ class MPS:
     Matrix product states (MPS) are a class of 1D tensor networks that are widely used
     in quantum computing to approximate the state of a quantum system. The MPS representation
     allows for a polynomial or even exponential reduction in the number of parameters required
-    to represent a quantum state, making it a powerful tool for quantum state synthesis and simulation.
+    to represent a quantum state, making it a powerful tool for quantum state synthesis and
+    simulation.
 
     The MPS representation is defined by first performing successive SVDs on the statevector
-    of the quantum system. We use SVD to find low-rank structure in the tensor network and reduce
-    the dimension of the tensors. We then choose a canonical form for the MPS, which is either "left"
-    or "right". The canonical form of the MPS states how the singular values from the SVD are
-    absorbed (contracted) with the left or right tensors.
+    of the quantum system. We use SVD to find low-rank structure in the tensor network and
+    reduce the dimension of the tensors. We then choose a canonical form for the MPS, which
+    is either "left" or "right". The canonical form of the MPS states how the singular values
+    from the SVD are absorbed (contracted) with the left or right tensors.
 
     The MPS can be further compressed by truncating the bond dimension of the MPS. The bond
     dimension of the MPS determines the dimension of the unitary layers, and affects the
-    fidelity of the approximation.
+    fidelity of the approximation. This is because the bond dimension captures the entanglement
+    structure of the quantum many-body system, where a higher bond dimension implies a higher
+    degree of entanglement.
 
-    Given each site will be represented as a $\chi\times\chi$ unitary matrix, the overall MPS will have a
-    scaling of $O(N\chi^2)$, where N is the number of sites and $\chi$ is the bond dimension. Given a bond
-    dimension of $2^{N/2}$ we can exactly represent any quantum state of N qubits. However, for practical
-    purposes, if we can keep the bond dimension constant, the MPS will have a linear scaling with the number
-    of sites.
+    Given each site will be represented as a $\chi\times\chi$ unitary matrix, the overall MPS
+    will have a scaling of $O(N\chi^2)$, where N is the number of sites and $\chi$ is the bond
+    dimension. Given a bond dimension of $2^{N/2}$ we can exactly represent any quantum state
+    of N qubits. However, for practical purposes, if we can keep the bond dimension constant,
+    the MPS will have a linear scaling with the number of sites.
+
+    The MPS can be written in the following
+
+    |ψ⟩ = ∑_{i1,i2,...,iN} Tr(A^{i1}A^{i2}...A^{iN}) |i1,i2,...,iN⟩
+
+    Where for arbitrary states, the MPS would be open-boundary condition, and non-translational
+    invariant, where A^{i} are not necessarily equal, and the first and last tensors are vectors.
 
     MPS Diagram:
     ```
@@ -78,11 +95,11 @@ class MPS:
     d d d d     d d d
     ```
 
-    where O represents the tensor at each site, d is the physical dimension, and D is the bond dimension
-    (also known as rank). For qubit systems, the physical dimension is 2.
+    where O represents the tensor at each site, d is the physical dimension, and D is the bond
+    dimension (also known as rank). For qubit systems, the physical dimension is 2.
 
-    An important note is that the MPS representation is aimed for at least 2 qubits, as the MPS approximates
-    the entanglement structure of the quantum many-body systems.
+    An important note is that the MPS representation is aimed for at least 2 qubits, as the MPS
+    approximates the entanglement structure of the quantum many-body systems.
 
     Parameters
     ----------
@@ -95,7 +112,7 @@ class MPS:
 
     Attributes
     ----------
-    `statevector` : qickit.primitives.Ket
+    `statevector` : quick.primitives.Ket
         The statevector of the quantum system.
     `mps` : qtn.MatrixProductState
         The matrix product state (MPS) of the quantum system.
@@ -136,17 +153,14 @@ class MPS:
             mps: qtn.MatrixProductState | None = None,
             bond_dimension: int=64
         ) -> None:
-        """ Initialize a `qmprs.mps.MPS` instance. Pass only `statevector` to define
+        """ Initialize a `qmprs.primitives.MPS` instance. Pass only `statevector` to define
         the MPS from the statevector. Pass only `mps` to define the MPS from the MPS.
         """
         if not isinstance(bond_dimension, SupportsIndex) or bond_dimension < 1:
             raise ValueError("`bond_dimension` must be an integer greater than 0.")
 
-        if statevector is not None and mps is not None:
-            raise ValueError("Cannot initialize with both `statevector` and `mps`.")
-
         # Initialize the MPS from the statevector
-        elif statevector is not None:
+        if statevector is not None:
             if not isinstance(statevector, Ket):
                 statevector = Ket(statevector)
 
@@ -194,7 +208,7 @@ class MPS:
 
         Parameters
         ----------
-        `statevector` : qickit.primitives.Ket
+        `statevector` : quick.primitives.Ket
             The statevector of the quantum system.
 
         Returns
@@ -220,7 +234,7 @@ class MPS:
 
     @staticmethod
     def to_statevector(mps: qtn.MatrixProductState) -> Ket:
-        """ Convert the MPS to a `qickit.primitives.Ket` statevector instance.
+        """ Convert the MPS to a `quick.primitives.Ket` statevector instance.
 
         Parameters
         ----------
@@ -229,7 +243,7 @@ class MPS:
 
         Returns
         -------
-        qickit.primitives.Ket
+        quick.primitives.Ket
             The statevector of the quantum system.
 
         Usage
@@ -293,7 +307,7 @@ class MPS:
         Usage
         -----
         >>> mps.canonicalize("left")
-        >>> mps.canonicalize("right")
+        >>> mps.canonicalize("right", normalize=True)
         """
         if mode == "left":
             self.mps.left_canonize(normalize=normalize)
@@ -356,7 +370,10 @@ class MPS:
                 else:
                     self.mps.compress(form=mode, max_bond=max_bond_dimension)
             else:
-                raise ValueError(f"`mode` must be either 'left', or 'right'. Received {mode}.")
+                raise ValueError(
+                    "`mode` must be either 'left', or 'right'. "
+                    f"Received {mode}."
+                )
 
     def contract_site(
             self,
@@ -479,8 +496,12 @@ class MPS:
         system [(0, 9)]. If sites 0 and 1 are not entangled at all
         with the rest, the method will return [(0, 0), (1,1), (2, 9)].
 
-        The implementation is based on the analytical decomposition
-        from Shi-ju Ran (2020).
+        The implementation is based on the analytical decomposition [1].
+
+        For more information, refer to the publication below:
+        [1] Ran, Shi-Ju.
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        https://arxiv.org/abs/1908.07958
 
         Returns
         -------
@@ -491,7 +512,7 @@ class MPS:
         -----
         >>> mps.get_submps_indices()
         """
-        submps_indices: list[tuple[int, int]] = []
+        sub_mps_indices: list[tuple[int, int]] = []
 
         if self.num_sites == 1:
             return [(0, 0)]
@@ -521,13 +542,13 @@ class MPS:
                 dim_left, _, dim_right = self.mps[site].shape # type: ignore
 
             if dim_left < 2 and dim_right < 2:
-                submps_indices.append((site, site))
+                sub_mps_indices.append((site, site))
             elif dim_left < 2 and dim_right >= 2:
                 temp = site
             elif dim_left >= 2 and dim_right < 2:
-                submps_indices.append((temp, site))
+                sub_mps_indices.append((temp, site))
 
-        return submps_indices
+        return sub_mps_indices
 
     def _generate_first_site_unitary(
             self,
@@ -538,7 +559,12 @@ class MPS:
 
         Notes
         -----
-        This method implements equation (9) from Shi-ju Ran (2020).
+        This method implements equation (9) from [1].
+
+        For more information, refer to the publication below:
+        [1] Ran, Shi-Ju.
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        https://arxiv.org/abs/1908.07958
 
         Parameters
         ----------
@@ -560,7 +586,7 @@ class MPS:
 
         # Given the physical dimension will always be equal to 2, we omit the loop and explicitly set the values
         # for faster computation
-        # Unitary with i,j = 0 being set as the mps data
+        # Unitary with i,j = 0 being set as the mps data of the first site
         unitary[0, 0] = mps_data.reshape((phy_dim, -1))
 
         # The other (d^2-1) elements are derived from the orthonormal basis
@@ -593,7 +619,12 @@ class MPS:
 
         Notes
         -----
-        This method implements equation (7) from Shi-ju Ran (2020).
+        This method implements equation (7) from [1].
+
+        For more information, refer to the publication below:
+        [1] Ran, Shi-Ju.
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        https://arxiv.org/abs/1908.07958
 
         Parameters
         ----------
@@ -613,13 +644,13 @@ class MPS:
         # Construct the orthonormal basis (kernel) of the MPS using SVD
         orthonormal_basis = linalg.null_space(mps_data.reshape((phy_dim, -1)).conj())
 
-        # Define the angle rotation for the orthonormal basis
+        # Perform phase correction to stabilize the computation
+        # This improves the fidelity of the MPS to circuit encoding
         angle_rotation = np.exp(1j * np.angle(orthonormal_basis[0]))
-
-        # Normalize the orthonormal basis
         orthonormal_basis = orthonormal_basis / angle_rotation
 
-        # Set the first row of the unitary to the MPS tensor at the specified site
+        # When i=0, the unitary is equal to the mps data, and when i=1 it's equal to the orthogonal basis
+        # of the mps data (kernel)
         # Given the physical dimension will always be equal to 2, we omit unitary[1:phy_dim]
         # to unitary[1] and explicitly set the value
         unitary[0] = mps_data
@@ -654,7 +685,12 @@ class MPS:
 
         Notes
         -----
-        This method implements equation (6) from Shi-ju Ran (2020).
+        This method implements equation (6) from [1].
+
+        For more information, refer to the publication below:
+        [1] Ran, Shi-Ju.
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        https://arxiv.org/abs/1908.07958
 
         Parameters
         ----------
@@ -703,7 +739,12 @@ class MPS:
         Notes
         -----
         The unitary layer is based on the analytical decomposition
-        of equations (6) to (9) from Shi-ju Ran (2020).
+        of equations (6) to (9) from [1].
+
+        For more information, refer to the publication below:
+        [1] Ran, Shi-Ju.
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        https://arxiv.org/abs/1908.07958
 
         Returns
         -------
@@ -953,62 +994,26 @@ class MPS:
         for layer in reversed(unitary_layers):
             self.apply_unitary_layer(layer, inverse=inverse)
 
-    @staticmethod
-    def _apply_unitary_layer_to_circuit(
-            circuit: Circuit,
-            unitary_layer: list[UnitaryBlock]
-        ) -> None:
-        """ Apply a unitary layer to the quantum circuit.
-
-        Parameters
-        ----------
-        `circuit` : qickit.circuit.Circuit
-            The quantum circuit.
-        `unitary_layer` : list[qtn.Tensor]
-            The unitary layer to be applied to the circuit.
-        """
-        for start_index, end_index, unitary_blocks in unitary_layer:
-            for index in range(start_index, end_index + 1):
-                unitary = unitary_blocks[index - start_index].data
-
-                # To avoid having to perform a vertical reverse on the circuit for preserving LSB
-                # convention, we will explicitly define the indices after the reverse operation
-                # hence:
-                # - Instead of applying the operation to index, we will apply it to
-                # what index would be after the reverse operation, i.e. abs(index - (circuit.num_qubits - 1)
-                # which is equivalent to abs(index - circuit.num_qubits + 1)
-                # - Instead of applying the operation to index + 1, we will apply it to
-                # what index + 1 would be after the reverse operation, i.e. abs(index + 2 - circuit.num_qubits)
-                if index == end_index:
-                    circuit.unitary(unitary, [abs(index - circuit.num_qubits + 1)])
-                else:
-                    circuit.unitary(unitary, [abs(index - circuit.num_qubits + 2), abs(index - circuit.num_qubits + 1)])
-
-    def circuit_from_unitary_layers(
-            self,
-            circuit_framework: type[Circuit],
-            unitary_layers: list[list[UnitaryBlock]]
-        ) -> Circuit:
-        """ Generate a quantum circuit from the MPS unitary layers.
-
-        Parameters
-        ----------
-        `circuit_framework` : type[qickit.circuit.Circuit]
-            The quantum circuit framework.
-        `unitary_layers` : list[list[qtn.Tensor]]
-            A list of unitary layers (list of unitaries) to be applied to the circuit.
+    def fidelity_with_zero_state(self) -> float:
+        """ Compute the cosine similarity between MPS state and 0 product state
+        <psi|00...0>.
 
         Returns
         -------
-        `circuit` : qickit.circuit.Circuit
-            The quantum circuit with the unitary layers applied.
+        `fidelity` : float
+            The fidelity of the MPS with the zero state.
+
+        Usage
+        -----
+        >>> mps.fidelity_with_zero_state()
         """
-        circuit = circuit_framework(self.num_sites)
+        zero_state = np.zeros(2**self.num_sites, dtype=np.complex128)
+        zero_state[0] = 1
 
-        for layer in unitary_layers:
-            MPS._apply_unitary_layer_to_circuit(circuit, layer)
+        # Compute the current statevector of the MPS
+        current_statevector = self.to_statevector(self.mps).data.flatten()
 
-        return circuit
+        return abs(np.dot(current_statevector.conj().T, zero_state))
 
     def draw(self) -> plt.Figure:
         """ Draw the MPS.
@@ -1090,14 +1095,14 @@ class MPS:
         Raises
         ------
         TypeError
-            If `value` is not an instance of `qmprs.mps.MPS`.
+            If `value` is not an instance of `qmprs.primitives.MPS`.
 
         Usage
         -----
         >>> mps1 == mps2
         """
         if not isinstance(value, MPS):
-            raise TypeError("`value` must be an instance of `qmprs.mps.MPS`.")
+            raise TypeError("`value` must be an instance of `qmprs.primitives.MPS`.")
 
         # Check if the geometry hash of the MPSs are equal
         geometry_hash_eq = \

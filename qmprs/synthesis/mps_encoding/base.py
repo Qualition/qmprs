@@ -20,10 +20,10 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 from typing import Type, Literal
-from qickit.circuit import Circuit # type: ignore
-from qickit.primitives import Ket # type: ignore
+from quick.circuit import Circuit # type: ignore
+from quick.primitives import Ket # type: ignore
 
-from qmprs.mps import MPS
+from qmprs.primitives import MPS
 
 
 class MPSEncoder(ABC):
@@ -32,12 +32,12 @@ class MPSEncoder(ABC):
 
     Parameters
     ----------
-    `circuit_framework` : type[qickit.circuit.Circuit]
+    `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
 
     Attributes
     ----------
-    `circuit_framework` : type[qickit.circuit.Circuit]
+    `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
 
     Usage
@@ -48,7 +48,7 @@ class MPSEncoder(ABC):
             self,
             circuit_framework: Type[Circuit]
         ) -> None:
-        """ Initialize a `qickit.MPSEncoder` instance.
+        """ Initialize a `quick.MPSEncoder` instance.
         """
         self.circuit_framework = circuit_framework
 
@@ -64,7 +64,7 @@ class MPSEncoder(ABC):
 
         Parameters
         ----------
-        `statevector` : qickit.primitives.Ket | NDArray[np.complex128]
+        `statevector` : quick.primitives.Ket | NDArray[np.complex128]
             The statevector of the quantum system.
         `bond_dimension` : int
             The maximum bond dimension.
@@ -77,7 +77,7 @@ class MPSEncoder(ABC):
 
         Returns
         -------
-        `circuit` : qickit.circuit.Circuit
+        `circuit` : quick.circuit.Circuit
             The quantum circuit.
 
         Usage
@@ -117,7 +117,7 @@ class MPSEncoder(ABC):
 
         Returns
         -------
-        `circuit` : qickit.circuit.Circuit
+        `circuit` : quick.circuit.Circuit
             The quantum circuit.
 
         Usage

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 __all__ = ["TreeRG"]
 
-from qickit.circuit import Circuit # type: ignore
+from quick.circuit import Circuit # type: ignore
 
-from qmprs.mps import MPS
+from qmprs.primitives import MPS
 from qmprs.synthesis.mps_encoding import MPSEncoder
 
 

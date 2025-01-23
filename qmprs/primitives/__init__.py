@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
+__all__ = ["MPS", "MPO"]
 
-__all__ = ["MPO"]
-
-
-# TODO: Implement MPO class
-class MPO:
-    ...
+from qmprs.primitives.mps import MPS
+from qmprs.primitives.mpo import MPO
