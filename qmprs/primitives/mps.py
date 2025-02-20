@@ -441,7 +441,7 @@ class MPS:
         if not (max_bond_dimension or mode):
             self.mps.compress()
 
-        elif not mode:
+        elif not mode and max_bond_dimension:
             self.mps = tensor_network_1d_compress(tn=self.mps, max_bond=max_bond_dimension)
             self.bond_dimension = max_bond_dimension
 
