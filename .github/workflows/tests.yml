@@ -40,8 +40,8 @@ jobs:
           with:
             token: ${{ secrets.CODECOV_TOKEN }}
 
-        - name: Report to Codacy
-          uses: codacy/codacy-coverage-reporter-action@v1.3.0  # v1.3.0
-          with:
-            project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-            coverage-reports: ./coverage.xml
+        # - name: Report to Codacy
+        #   uses: codacy/codacy-coverage-reporter-action@v1.3.0  # v1.3.0
+        #   with:
+        #     project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        #     coverage-reports: ./coverage.xml
