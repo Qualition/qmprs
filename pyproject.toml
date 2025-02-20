@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "qmprs"
 version = "0.0.0rc0"
 dependencies = [
-    "git+https://github.com/Qualition/quick",
+    "quick-core @ git+https://github.com/Qualition/quick",
     "quimb == 1.10.0"
 ]
 requires-python = ">=3.10, <3.13"
