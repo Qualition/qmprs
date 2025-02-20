@@ -1,10 +1,10 @@
-# Copyright 2023-2024 Qualition Computing LLC.
+# Copyright 2023-2025 Qualition Computing LLC.
 #
-# Licensed under the QUALITION Dual License (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Qualition/QMPRS/blob/main/LICENSE
+#     https://github.com/Qualition/qmprs/blob/main/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["MPS", "MPO"]
+__all__ = ["MPS"]
 
 from qmprs.primitives.mps import MPS
-from qmprs.primitives.mpo import MPO

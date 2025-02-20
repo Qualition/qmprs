@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qmprs"
+version = "0.0.0rc0"
+dependencies = [
+    "git+https://github.com/Qualition/quick",
+    "quimb == 1.10.0"
+]
+requires-python = ">=3.10, <3.13"
+authors = [
+  {name = "Amir Ali Malekani Nezhad", email = "amiralimlk07@gmail.com"},
+  {name = "Tushar Pandey", email = "tusharp@tamu.edu"}
+]
+maintainers = [
+  {name = "Amir Ali Malekani Nezhad", email = "amiralimlk07@gmail.com"}
+]
+description = "qmprs is a state-of-the-art package for compressing quantum circuits using Tensor Networks such as Matrix Product States (MPS) and Matrix Product Operators (MPO)."
+readme = "README.md"
+license = {file = "LICENSE"}
+keywords = ["quantum computing", "quantum circuit", "quantum compiler"]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff == 0.9.2",
+  "mypy == 1.14.1",
+  "pytest == 8.3.4",
+  "pytest-mock == 3.14.0",
+  "pytest-cov == 6.0.0",
+  "coverage == 7.6.10",
+]
+
+[project.urls]
+Repository = "https://github.com/qualition/qmprs.git"
+"Bug Tracker" = "https://github.com/qualition/qmprs/issues"
+
+[tool.setuptools.packages.find]
+include = ["qmprs*"]
+
+[tool.codeflash]
+# All paths are relative to this pyproject.toml's directory.
+module-root = "qmprs"
+tests-root = "tests"
+test-framework = "pytest"
+ignore-paths = []
+formatter-cmds = ["disabled"]

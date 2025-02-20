@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["mps_encoding"]
+from __future__ import annotations
 
-from qmprs.synthesis import mps_encoding
+__all__ = ["mps_encoding"]

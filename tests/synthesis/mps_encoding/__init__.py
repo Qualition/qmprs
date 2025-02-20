@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["mps_encoding"]
+__all__ = ["Template"]
 
-from qmprs.synthesis import mps_encoding
+from tests.synthesis.mps_encoding.test_encoding import Template
+from tests.synthesis.mps_encoding.test_sequential_encoding import TestSequential

@@ -1,16 +1,19 @@
-# Copyright 2023-2024 Qualition Computing LLC.
+# Copyright 2023-2025 Qualition Computing LLC.
 #
-# Licensed under the QUALITION Dual License (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Qualition/QMPRS/blob/main/LICENSE
+#     https://github.com/Qualition/qmprs/blob/main/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+""" Encoder ABC for encoding MPS into quantum circuits.
+"""
 
 from __future__ import annotations
 
@@ -20,15 +23,15 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 from typing import Type, Literal
-from quick.circuit import Circuit # type: ignore
-from quick.primitives import Ket # type: ignore
+from quick.circuit import Circuit
+from quick.primitives import Ket
 
 from qmprs.primitives import MPS
 
 
 class MPSEncoder(ABC):
-    """ `qmprs.synthesis.mps_encoding.MPSEncoder` is the class for preparing quantum states using Matrix Product
-    States (MPS).
+    """ `qmprs.synthesis.mps_encoding.MPSEncoder` is the abstract base class
+    for the MPS encoder.
 
     Parameters
     ----------
@@ -42,13 +45,13 @@ class MPSEncoder(ABC):
 
     Usage
     -----
-    >>> encoder = MPSEncoder(Circuit)
+    >>> encoder = MPSEncoder(QiskitCircuit)
     """
     def __init__(
             self,
             circuit_framework: Type[Circuit]
         ) -> None:
-        """ Initialize a `quick.MPSEncoder` instance.
+        """ Initialize a `qmprs.mps_encoding.MPSEncoder` instance.
         """
         self.circuit_framework = circuit_framework
 
@@ -82,11 +85,13 @@ class MPSEncoder(ABC):
 
         Usage
         -----
-        >>> circuit = encoder.prepare_state(statevector,
-        ...                                 bond_dimension,
-        ...                                 compression_percentage,
-        ...                                 index_type,
-        ...                                 **kwargs)
+        >>> circuit = encoder.prepare_state(
+        ...     statevector,
+        ...     bond_dimension,
+        ...     compression_percentage,
+        ...     index_type,
+        ...     **kwargs
+        ... )
         """
         if not isinstance(statevector, Ket):
             statevector = Ket(statevector)

@@ -5,7 +5,10 @@
 
 ### Prerequisites
 
-- python 3.11.9
+- python 3.10, 3.11, 3.12
+- Ubuntu
+
+Currently, due to this [issue](https://github.com/Qualition/quick/issues/11) `qmprs` works reliably only on Ubuntu.
 
 ### Quick Installation
 
