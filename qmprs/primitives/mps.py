@@ -1,10 +1,10 @@
-# Copyright 2023-2024 Qualition Computing LLC.
+# Copyright 2023-2025 Qualition Computing LLC.
 #
-# Licensed under the QUALITION Dual License (the "License");
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Qualition/QMPRS/blob/main/LICENSE
+#     https://github.com/Qualition/qmprs/blob/main/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,9 +34,10 @@ from numpy.typing import NDArray
 import quimb.tensor as qtn # type: ignore
 from quimb.tensor.tensor_1d_compress import tensor_network_1d_compress # type: ignore
 from scipy import linalg # type: ignore
-from typing import Literal, SupportsIndex, TypeAlias
-from quick.predicates import is_unitary_matrix # type: ignore
-from quick.primitives import Ket # type: ignore
+from typing import Literal, TypeAlias
+from quick.circuit.metrics.metrics import _get_submps_indices as get_submps_indices
+from quick.predicates import is_unitary_matrix
+from quick.primitives import Ket
 
 """ Type aliases for unitary blocks and unitary layers.
 `UnitaryBlock`: A unitary block is a single unitary operator that acts on the MPS.
@@ -47,9 +48,9 @@ UnitaryLayer: TypeAlias = list[UnitaryBlock]
 
 
 class MPS:
-    """ `qmprs.primitives.MPS` is the class for creating and manipulating matrix product states (MPS).
-    This class wraps the `quimb.tensor.MatrixProductState` class to provide a more user-friendly
-    interface for creating and manipulating MPS.
+    """ `qmprs.primitives.MPS` is the class for creating and manipulating matrix product
+    states (MPS). This class wraps the `quimb.tensor.MatrixProductState` class to provide
+    a more user-friendly interface for creating and manipulating MPS.
 
     Refer to the link below for more information on the `quimb.tensor.MatrixProductState` class.
     https://quimb.readthedocs.io/en/latest/autoapi/quimb/tensor/tensor_1d/index.html#quimb.tensor.tensor_1d.MatrixProductState
@@ -103,9 +104,9 @@ class MPS:
 
     Parameters
     ----------
-    `statevector` : NDArray[np.complex128], optional
+    `statevector` : quick.primitives.Ket | NDArray[np.complex128], optional, default=None
         The statevector of the quantum system.
-    `mps` : qtn.MatrixProductState, optional
+    `mps` : qtn.MatrixProductState, optional, default=None
         The matrix product state (MPS) of the quantum system.
     `bond_dimension` : int
         The maximum bond dimension of the MPS.
@@ -149,43 +150,54 @@ class MPS:
     """
     def __init__(
             self,
-            statevector: NDArray[np.complex128] | None = None,
+            statevector: Ket | NDArray[np.complex128] | None = None,
             mps: qtn.MatrixProductState | None = None,
             bond_dimension: int=64
         ) -> None:
-        """ Initialize a `qmprs.primitives.MPS` instance. Pass only `statevector` to define
-        the MPS from the statevector. Pass only `mps` to define the MPS from the MPS.
+        """ Initialize a `qmprs.primitives.MPS` instance.
+
+        Pass only `statevector` to define the MPS from the statevector.
+        Pass only `mps` to define the MPS from the MPS.
         """
-        if not isinstance(bond_dimension, SupportsIndex) or bond_dimension < 1:
-            raise ValueError("`bond_dimension` must be an integer greater than 0.")
+        if not isinstance(bond_dimension, int) or bond_dimension < 1:
+            raise ValueError(
+                "`bond_dimension` must be an integer greater than 0. "
+                f"Received {bond_dimension}."
+            )
 
         # Initialize the MPS from the statevector
-        if statevector is not None:
+        if (statevector is not None) and (mps is None):
             if not isinstance(statevector, Ket):
                 statevector = Ket(statevector)
 
             if statevector.num_qubits == 1: # type: ignore
-                raise ValueError("The statevector must have at least 2 qubits.")
+                raise ValueError(
+                    "The statevector must have at least 2 qubits. "
+                    f"Received {statevector.num_qubits}."
+                )
 
             self.statevector = statevector
             self.mps = self.from_statevector(statevector, bond_dimension)
 
         # Initialize the MPS from the MPS
-        elif mps is not None:
+        elif (mps is not None) and (statevector is None):
             if not isinstance(mps, qtn.MatrixProductState):
-                raise TypeError("`mps` must be a `qtn.MatrixProductState` instance.")
+                raise TypeError(
+                    "`mps` must be a `qtn.MatrixProductState` instance. "
+                    f"Received {type(mps)}."
+                )
 
             if mps.num_tensors == 1:
-                raise ValueError("The MPS must have at least 2 tensors.")
+                raise ValueError(
+                    "The MPS must have at least 2 tensors. "
+                    f"Received {mps.num_tensors}."
+                )
 
             self.mps = mps
             self.statevector = self.to_statevector(mps)
 
         else:
-            raise ValueError("Must provide either `statevector` or `mps`.")
-
-        # Check if the MPS is normalized to 2-norm
-        self.normalized = self.mps.norm() == 1
+            raise ValueError("Must provide either `statevector` or `mps` not both.")
 
         # Define the maximum bond dimension
         self.bond_dimension = bond_dimension
@@ -196,7 +208,11 @@ class MPS:
         # The physical dimension must be equal to two, given we define the synthesis
         # for qubit-based paradigms
         if self.mps.phys_dim() != 2:
-            raise ValueError("Only supports MPS with physical dimension of 2.")
+            raise ValueError(
+                "Only supports MPS with physical dimension of 2. "
+                f"Received {self.mps.phys_dim()}."
+            )
+
         self.physical_dimension = 2
 
     @staticmethod
@@ -253,6 +269,36 @@ class MPS:
         """
         return Ket(mps.to_dense())
 
+    @property
+    def norm(self) -> float:
+        """ The 2-norm of the MPS.
+
+        Returns
+        -------
+        float
+            The 2-norm of the MPS.
+
+        Usage
+        -----
+        >>> mps.norm
+        """
+        return self.mps.norm() # type: ignore
+
+    @property
+    def is_normalized(self) -> bool:
+        """ Check if the MPS is normalized.
+
+        Returns
+        -------
+        bool
+            Whether the MPS is normalized.
+
+        Usage
+        -----
+        >>> mps.is_normalized
+        """
+        return True if np.isclose(self.norm, 1) else False
+
     def normalize(self) -> None:
         """ Normalize the MPS.
 
@@ -260,7 +306,44 @@ class MPS:
         -----
         >>> mps.normalize()
         """
-        self.mps.normalize()
+        if not self.is_normalized:
+            self.mps.normalize()
+
+    @property
+    def orthogonal_center_range(self) -> tuple[int, int]:
+        """ The range of the orthogonality center.
+
+        Returns
+        -------
+        tuple[int, int]
+            The range of the orthogonality center.
+
+        Usage
+        -----
+        >>> mps.orthogal_center_range
+        """
+        return self.mps.calc_current_orthog_center() # type: ignore
+
+    @property
+    def canonical_form(self) -> Literal["left", "right", "unknown"]:
+        """ The canonical form of the MPS.
+
+        Returns
+        -------
+        Literal["left", "right", "unknown"]
+            The canonical form of the MPS. Can be "left", "right",
+            or "unknown".
+
+        Usage
+        -----
+        >>> mps.canonical_form
+        """
+        if self.orthogonal_center_range == (0, 0):
+            return "right"
+        elif self.orthogonal_center_range == (self.num_sites - 1, self.num_sites - 1):
+            return "left"
+        else:
+            return "unknown"
 
     def canonicalize(
             self,
@@ -311,10 +394,8 @@ class MPS:
         """
         if mode == "left":
             self.mps.left_canonize(normalize=normalize)
-            self.canonical_form = "left"
         elif mode == "right":
             self.mps.right_canonize(normalize=normalize)
-            self.canonical_form = "right"
         else:
             raise ValueError("`mode` must be either 'left' or 'right'.")
 
@@ -360,15 +441,17 @@ class MPS:
         if not (max_bond_dimension or mode):
             self.mps.compress()
 
-        elif not mode:
+        elif not mode and max_bond_dimension:
             self.mps = tensor_network_1d_compress(tn=self.mps, max_bond=max_bond_dimension)
+            self.bond_dimension = max_bond_dimension
 
         else:
-            if mode in ["left", "right", "flat"]:
+            if mode in ["left", "right"]:
                 if not max_bond_dimension:
                     self.mps.compress(form=mode)
                 else:
                     self.mps.compress(form=mode, max_bond=max_bond_dimension)
+                    self.bond_dimension = max_bond_dimension
             else:
                 raise ValueError(
                     "`mode` must be either 'left', or 'right'. "
@@ -481,75 +564,6 @@ class MPS:
 
         self.mps.permute_arrays(shape)
 
-    def get_submps_indices(self) -> list[tuple[int, int]]:
-        """ Get the indices of contiguous blocks in the MPS.
-
-        Notes
-        -----
-        Certain sites may not be entangled with the rest, and
-        thus we can simply apply a single qubit gate to them
-        as opposed to a two qubit gate.
-
-        This reduces the overall cost of the circuit for a given
-        layer. If all sites are entangled, then the method will
-        simply return the indices of the MPS, i.e., for 10 qubit
-        system [(0, 9)]. If sites 0 and 1 are not entangled at all
-        with the rest, the method will return [(0, 0), (1,1), (2, 9)].
-
-        The implementation is based on the analytical decomposition [1].
-
-        For more information, refer to the publication below:
-        [1] Ran, Shi-Ju.
-        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
-        https://arxiv.org/abs/1908.07958
-
-        Returns
-        -------
-        `submps_indices` : list[tuple[int, int]]
-            The indices of the MPS contiguous blocks.
-
-        Usage
-        -----
-        >>> mps.get_submps_indices()
-        """
-        sub_mps_indices: list[tuple[int, int]] = []
-
-        if self.num_sites == 1:
-            return [(0, 0)]
-
-        for site in range(self.num_sites):
-            # Reset the dimension variables for each iteration
-            dim_left, dim_right = 1, 1
-
-            # Define the dimensions for each site
-            # The first and last sites are connected to only one site
-            # as opposed to the other sites in the middle which are connected
-            # to two sites to their left and right
-            #
-            #  |
-            #  ●━━ `dim_right`
-            if site == 0:
-                _, dim_right = self.mps[site].shape # type: ignore
-            #
-            #              |
-            # `dim_left` ━━●
-            elif site == (self.num_sites - 1):
-                dim_left, _ = self.mps[site].shape # type: ignore
-            #
-            #              |
-            # `dim_left` ━━●━━ `dim_right`
-            else:
-                dim_left, _, dim_right = self.mps[site].shape # type: ignore
-
-            if dim_left < 2 and dim_right < 2:
-                sub_mps_indices.append((site, site))
-            elif dim_left < 2 and dim_right >= 2:
-                temp = site
-            elif dim_left >= 2 and dim_right < 2:
-                sub_mps_indices.append((temp, site))
-
-        return sub_mps_indices
-
     def _generate_first_site_unitary(
             self,
             mps_data: NDArray[np.complex128],
@@ -563,7 +577,7 @@ class MPS:
 
         For more information, refer to the publication below:
         [1] Ran, Shi-Ju.
-        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
         https://arxiv.org/abs/1908.07958
 
         Parameters
@@ -623,7 +637,7 @@ class MPS:
 
         For more information, refer to the publication below:
         [1] Ran, Shi-Ju.
-        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
         https://arxiv.org/abs/1908.07958
 
         Parameters
@@ -689,7 +703,7 @@ class MPS:
 
         For more information, refer to the publication below:
         [1] Ran, Shi-Ju.
-        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
         https://arxiv.org/abs/1908.07958
 
         Parameters
@@ -743,7 +757,7 @@ class MPS:
 
         For more information, refer to the publication below:
         [1] Ran, Shi-Ju.
-        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates. (2020).
+        Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
         https://arxiv.org/abs/1908.07958
 
         Returns
@@ -765,7 +779,7 @@ class MPS:
 
         generated_unitary_layer: list[UnitaryBlock] = []
 
-        sub_mps_indices = self.get_submps_indices()
+        sub_mps_indices = get_submps_indices(self.mps)
 
         for start_index, end_index in sub_mps_indices:
             generated_unitaries: list[qtn.Tensor] = []
@@ -805,7 +819,7 @@ class MPS:
         return generated_unitary_layer
 
     def generate_bond_D_unitary_layer(self) -> UnitaryLayer:
-        """ Compress the unitary layer's bond dimension to 2.
+        """ Truncate the unitary layer's bond dimension to 2.
 
         Notes
         -----
@@ -1040,7 +1054,7 @@ class MPS:
             f"{self.__class__.__name__}"
             f"(num_sites={self.num_sites}, "
             f"bond_dimension={self.bond_dimension}, "
-            f"normalized={self.normalized}, "
+            f"normalized={self.is_normalized}, "
             f"canonical_form={self.canonical_form})"
         )
 

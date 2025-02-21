@@ -12,6 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["mps_encoding"]
+from __future__ import annotations
 
-from qmprs.synthesis import mps_encoding
+__all__ = ["Template"]
+
+from abc import ABC, abstractmethod
+
+
+class Template(ABC):
+    """ `tests.synthesis.mps_encoding.Template` is the template for creating MPS encoding testers.
+    """
+    @abstractmethod
+    def test_prepare_state(self) -> None:
+        """ Test the preparation of the MPS from a statevector.
+        """
+
+    @abstractmethod
+    def test_prepare_mps(self) -> None:
+        """ Test the preparation of the MPS from a MPS.
+        """

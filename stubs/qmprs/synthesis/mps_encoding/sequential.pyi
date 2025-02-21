@@ -12,6 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["mps_encoding"]
+from qmprs.primitives.mps import MPS
+from qmprs.synthesis.mps_encoding import MPSEncoder
+from quick.circuit import Circuit
 
-from qmprs.synthesis import mps_encoding
+__all__ = ["Sequential"]
+
+class Sequential(MPSEncoder):
+    def __init__(self, circuit_framework: type[Circuit]) -> None: ...
+    @property
+    def fidelity_threshold(self) -> float: ...
+    @fidelity_threshold.setter
+    def fidelity_threshold(self, threshold: float) -> None: ...
+    def prepare_mps(self, mps: MPS, **kwargs) -> Circuit: ...
