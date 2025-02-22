@@ -29,11 +29,35 @@ pip install qmprs
 
 Pip will handle all dependencies automatically and you will always install the latest (and well-tested) version.
 
-To install from source, follow the instructions in the [`documentation`]().
+To install from source:
+
+```
+pip install git+https://github.com/Qualition/qmprs
+```
 
 ## Usage
 
-The docs/examples are a good way for understanding how `qmprs` works. Depending on your preference, you may use the package as end-to-end, or use it in parts for low-level modifications.
+The notebooks are a good way for understanding how `qmprs` works. Depending on your preference, you may use the package as end-to-end, or use it in parts for low-level modifications.
+
+### Quick Example
+
+```py
+import numpy as np
+from quick.circuit import QiskitCircuit
+from qmprs.synthesis.mps_encoding import Sequential
+
+num_qubits = 8
+
+# Generate a random state
+random_state = np.random.rand(2**num_qubits) + 1j * np.random.rand(2**num_qubits)
+random_state /= np.linalg.norm(random_state)
+
+# Initialize the encoder with the preferred circuit backend
+encoder = Sequential(QiskitCircuit)
+
+# Encode the MPS
+encoded_circuit = encoder.prepare_state(random_state, num_layers=32, bond_dimension=8)
+```
 
 ## Testing
 
