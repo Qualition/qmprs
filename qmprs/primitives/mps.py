@@ -35,7 +35,7 @@ import quimb.tensor as qtn # type: ignore
 from quimb.tensor.tensor_1d_compress import tensor_network_1d_compress # type: ignore
 from scipy import linalg # type: ignore
 from typing import Literal, TypeAlias
-from quick.circuit.metrics.metrics import _get_submps_indices as get_submps_indices
+from quick.metrics.metrics import _get_submps_indices as get_submps_indices
 from quick.predicates import is_unitary_matrix
 from quick.primitives import Ket
 
@@ -176,8 +176,8 @@ class MPS:
                     f"Received {statevector.num_qubits}."
                 )
 
-            self.statevector = statevector
-            self.mps = self.from_statevector(statevector, bond_dimension)
+            self.statevector: Ket = statevector
+            self.mps: qtn.MatrixProductState = self.from_statevector(statevector, bond_dimension)
 
         # Initialize the MPS from the MPS
         elif (mps is not None) and (statevector is None):
@@ -193,8 +193,8 @@ class MPS:
                     f"Received {mps.num_tensors}."
                 )
 
-            self.mps = mps
-            self.statevector = self.to_statevector(mps)
+            self.mps: qtn.MatrixProductState = mps
+            self.statevector: Ket = self.to_statevector(mps)
 
         else:
             raise ValueError("Must provide either `statevector` or `mps` not both.")
@@ -483,7 +483,7 @@ class MPS:
         if not isinstance(sites, Sequence) or not all(isinstance(index, int) for index in sites):
             raise TypeError("`sites` must be a collection of integers.")
 
-        self.mps ^= (self.mps.site_tag(i) for i in sites)
+        self.mps ^= (self.mps.site_tag(i) for i in sites) # type: ignore
 
     def contract_index(
             self,
