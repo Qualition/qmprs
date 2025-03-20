@@ -193,8 +193,8 @@ class MPS:
                     f"Received {mps.num_tensors}."
                 )
 
-            self.mps: qtn.MatrixProductState = mps
-            self.statevector: Ket = self.to_statevector(mps)
+            self.mps: qtn.MatrixProductState = mps # type: ignore
+            self.statevector: Ket = self.to_statevector(mps) # type: ignore
 
         else:
             raise ValueError("Must provide either `statevector` or `mps` not both.")
