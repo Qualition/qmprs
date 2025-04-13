@@ -48,7 +48,7 @@ UnitaryLayer: TypeAlias = list[UnitaryBlock]
 
 
 class MPS:
-    """ `qmprs.primitives.MPS` is the class for creating and manipulating matrix product
+    r""" `qmprs.primitives.MPS` is the class for creating and manipulating matrix product
     states (MPS). This class wraps the `quimb.tensor.MatrixProductState` class to provide
     a more user-friendly interface for creating and manipulating MPS.
 
@@ -83,7 +83,7 @@ class MPS:
 
     The MPS can be written in the following
 
-    |ψ⟩ = ∑_{i1,i2,...,iN} Tr(A^{i1}A^{i2}...A^{iN}) |i1,i2,...,iN⟩
+    $\ket{\psi} = \sum_{i_1, i_2, \cdots, i_N} Tr(A^{i_1}A^{i_2}\cdots A^{i_N}) \ket{i_1,i_2,\cdots,i_N}$
 
     Where for arbitrary states, the MPS would be open-boundary condition, and non-translational
     invariant, where A^{i} are not necessarily equal, and the first and last tensors are vectors.
@@ -170,7 +170,7 @@ class MPS:
             if not isinstance(statevector, Ket):
                 statevector = Ket(statevector)
 
-            if statevector.num_qubits == 1: # type: ignore
+            if statevector.num_qubits == 1:
                 raise ValueError(
                     "The statevector must have at least 2 qubits. "
                     f"Received {statevector.num_qubits}."
@@ -203,7 +203,7 @@ class MPS:
         self.bond_dimension = bond_dimension
 
         # Define the number of sites for the MPS
-        self.num_sites = self.statevector.num_qubits # type: ignore
+        self.num_sites = self.statevector.num_qubits
 
         # The physical dimension must be equal to two, given we define the synthesis
         # for qubit-based paradigms
@@ -511,8 +511,6 @@ class MPS:
         """ Perform a polar decomposition on the MPS to retrieve the
         isometries V and positive semidefinite matrix P.
 
-        # TODO: Add diagram (9) from Wei et al.
-
         Parameters
         ----------
         `indices` : Sequence[int]
@@ -737,7 +735,7 @@ class MPS:
         # .T at the end is useful for the application of unitaries as quantum circuit
         unitary = qtn.Tensor(
             unitary.reshape((phy_dim, phy_dim)).T, # type: ignore
-            inds=("v", "p"),
+            inds=("L", "R"),
             tags={"G"}
         )
 
@@ -746,19 +744,36 @@ class MPS:
         return generated_unitaries
 
     def generate_unitary_layer(self) -> UnitaryLayer:
-        """ Generate a unitary layer that evolves the product state
-        |00..0> to the MPS. Each unitary layer is a list of unitary
-        matrices (blocks) to be applied to the MPS.
+        r""" Generate a unitary layer that evolves the product state
+        $\ket{00\cdots 0}$ to the MPS. Each unitary layer is a list
+        of unitary matrices (blocks) to be applied to the MPS.
 
         Notes
         -----
         The unitary layer is based on the analytical decomposition
-        of equations (6) to (9) from [1].
+        of equations (6) to (9) from [1]. This implements the logic
+        for Di from [2] and can be viewed from Fig. 1.
 
-        For more information, refer to the publication below:
+        We approximate a MPS with a layer of unitaries. To get a high
+        fidelity approximation, we need multiple layers. We need to generate
+        a layer, apply its adjoint to the MPS to update its definition, and
+        add the layer to a list. We do this multiple times to disentangle
+        the MPS and maximize its inner product with the product state.
+
+        We can then reverse the order of the layers to evolve the product state
+        to the MPS.
+
+        Refer to [1] for more information on the analytical decomposition, and [2]
+        (1) and (2) for a concise overview of the unitary layer generation.
+
+        For more information, refer to the publications below:
         [1] Ran, Shi-Ju.
         Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
         https://arxiv.org/abs/1908.07958
+
+        [2] Rudolph, Chen, Miller, Acharya, Perdomo-Ortiz.
+        Decomposition of Matrix Product States into Shallow Quantum Circuits (2022).
+        https://arxiv.org/abs/2209.00595
 
         Returns
         -------
@@ -785,7 +800,13 @@ class MPS:
             generated_unitaries: list[qtn.Tensor] = []
 
             for index in range(start_index, end_index + 1):
-                if index == end_index:
+                if index == start_index:
+                    generated_unitaries = self._generate_first_site_unitary(
+                        mps_copy[index].data, # type: ignore
+                        generated_unitaries
+                    )
+
+                elif index == end_index:
                     generated_unitaries = self._generate_last_site_unitary(
                         mps_copy[index].data, # type: ignore
                         start_index,
@@ -793,14 +814,8 @@ class MPS:
                         generated_unitaries
                     )
 
-                elif index != start_index:
-                    generated_unitaries = self._generate_two_site_unitary(
-                        mps_copy[index].data, # type: ignore
-                        generated_unitaries
-                    )
-
                 else:
-                    generated_unitaries = self._generate_first_site_unitary(
+                    generated_unitaries = self._generate_two_site_unitary(
                         mps_copy[index].data, # type: ignore
                         generated_unitaries
                     )
@@ -819,7 +834,7 @@ class MPS:
         return generated_unitary_layer
 
     def generate_bond_D_unitary_layer(self) -> UnitaryLayer:
-        """ Truncate the unitary layer's bond dimension to 2.
+        r""" Truncate the unitary layer's bond dimension to 2.
 
         Notes
         -----
@@ -829,7 +844,6 @@ class MPS:
 
         This is needed to ensure we only use one and two qubit gates.
 
-        Publication:
         https://arxiv.org/pdf/2209.00595, Figure 1
 
         Returns
@@ -846,9 +860,11 @@ class MPS:
         -----
         >>> mps.generate_bond_D_unitary_layer()
         """
-        # Copy the MPS (as the MPS will be modified in place with `.compress` and `.canonicalize` methods)
+        # Copy the MPS (as the MPS will be modified in place with
+        # `.compress` and `.canonicalize` methods)
         mps_copy = copy.deepcopy(self)
 
+        # Truncate the MPS to the bond dimension of 2 via SVD
         mps_copy.compress(mode="right", max_bond_dimension=self.physical_dimension)
 
         # To facilitate the loss-less conversion of all core
@@ -922,7 +938,7 @@ class MPS:
             The unitary layer to be applied to the MPS.
         """
         for start_index, end_index, unitary_blocks in unitary_layer:
-            for index in list(reversed(range(start_index, end_index + 1))):
+            for index in range(end_index, start_index - 1, -1):
                 if index == end_index:
                     # Add the generated unitary gates to the MPS
                     # (use `.gate_` as the operation is inplace)
@@ -1008,13 +1024,13 @@ class MPS:
         for layer in reversed(unitary_layers):
             self.apply_unitary_layer(layer, inverse=inverse)
 
-    def fidelity_with_zero_state(self) -> float:
-        """ Compute the cosine similarity between MPS state and 0 product state
-        <psi|00...0>.
+    def fidelity_with_zero_state(self) -> complex:
+        r""" Compute the cosine similarity between MPS state and product state
+        $\ket{00\cdots 0}$.
 
         Returns
         -------
-        `fidelity` : float
+        `fidelity` : complex
             The fidelity of the MPS with the zero state.
 
         Usage
@@ -1027,7 +1043,7 @@ class MPS:
         # Compute the current statevector of the MPS
         current_statevector = self.to_statevector(self.mps).data.flatten()
 
-        return abs(np.dot(current_statevector.conj().T, zero_state))
+        return np.dot(current_statevector.conj().T, zero_state)
 
     def draw(self) -> plt.Figure:
         """ Draw the MPS.

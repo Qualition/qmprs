@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["MPSEncoder",
-           "Sequential"]
+__all__ = [
+    "MPSEncoder",
+    "Sequential"
+]
 
 from qmprs.synthesis.mps_encoding.base import MPSEncoder
 from qmprs.synthesis.mps_encoding.sequential import Sequential
