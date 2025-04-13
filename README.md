@@ -66,7 +66,8 @@ encoded_circuit = encoder.prepare_state(
 fidelity = np.dot(random_state.conj().T, encoded_circuit.get_statevector())
 
 # 0.9867610785253651 fidelity, 223 depth
-# 2027
+# Isometry requires 2027 depth
+# Sequential provides a 88.99 percent reduction in depth
 print(f"Fidelity: {fidelity}")
 print(f"Depth: {encoded_circuit.get_depth()}")
 ```
