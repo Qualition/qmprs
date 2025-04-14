@@ -1,4 +1,7 @@
 [build-system]
+# Remove this pin when pypa/twine supports core metadata 2.4
+# hynek/build-and-inspect-python-package runs `twine check`
+# which is causing the release CI to fail
 requires = ["setuptools>=69.0,<77.0.0"]
 build-backend = "setuptools.build_meta"
 
