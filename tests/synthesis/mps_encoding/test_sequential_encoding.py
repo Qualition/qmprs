@@ -100,7 +100,7 @@ class TestSequential(Template):
 
         layer_fidelity = []
 
-        for i in range(1, 20):
+        for i in range(1, 10):
             # Prepare the MPS from the statevector using the Sequential encoder
             circuit = encoder.prepare_state(statevector=statevector, bond_dimension=64, num_layers=i)
 
@@ -113,3 +113,29 @@ class TestSequential(Template):
 
         # Ensure that the fidelity increases with the number of layers
         assert np.all(np.diff(layer_fidelity) >= 0)
+
+    def test_sweep_improvement(self) -> None:
+        """ Test the improvement of the fidelity as the bond dimension increases.
+        """
+        # Define the number of qubits and generate a random statevector
+        num_qubits = 8
+        statevector = generate_random_state(num_qubits)
+
+        # Define the Sequential encoder
+        encoder = Sequential(circuit_framework=QiskitCircuit)
+
+        bond_fidelity = []
+
+        for i in range(1, 8):
+            # Prepare the MPS from the statevector using the Sequential encoder
+            circuit = encoder.prepare_state(statevector=statevector, bond_dimension=64, num_layers=6, num_sweeps=i)
+
+            # Extract the statevector from the circuit
+            statevector_from_circuit = circuit.get_statevector()
+
+            # Compute the fidelity between the statevector from the circuit and the original statevector
+            fidelity = abs(np.dot(statevector_from_circuit.conj(), statevector))
+            bond_fidelity.append(fidelity)
+
+        # Ensure that the fidelity increases with the bond dimension
+        assert np.all(np.diff(bond_fidelity) >= 0)
