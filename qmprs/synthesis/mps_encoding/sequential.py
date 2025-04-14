@@ -427,7 +427,7 @@ class Sequential(MPSEncoder):
             The optimized circuit tensor network.
         """
         # We do not want to include the qubits, so we will
-        # excplitily control the iteration index
+        # explicitly control the iteration index
         gate_index = 0
 
         for gate in circuit_tensor_network:
