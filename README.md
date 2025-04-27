@@ -80,24 +80,37 @@ Run all tests with the command:
 py -m pytest tests
 ```
 
+## Linting
+
+Run lint checks with the commands:
+
+```
+mypy qmprs
+ruff check qmprs
+```
+
 ## Contribution Guidelines
 
 If you'd like to contribute to `qmprs`, please take a look at our [`contribution guidelines`](). By participating, you are expected to uphold our code of conduct.
 
 We use [`GitHub issues`](https://github.com/Qualition/QMPRS/issues) for tracking requests and bugs.
 
-## License
-
-See [`LICENSE`](LICENSE) for details.
-
 ## Citation
 
 If you wish to attribute/distribute our work, please cite the accompanying paper:
 ```
 @article{malekaninezhad2024qmprs,
-   title={qmprs: {A}pproximate {Q}uantum {C}ircuit {C}ompiler},
+   title={qmprs: {Q}uantum {M}atrix {P}roduct {R}educed {S}ynthesis},
    author={Amir Ali Malekani Nezhad, Tushar Pandey},
-   year={2024},
+   year={2026},
    journal={arXiv preprint arXiv:TBD},
 }
 ```
+
+## Acknowledgement
+
+This work would not have been possible without invaluable conversations with authors of the works. We would like to especially thank **Manuel S. Rudolph** for discussion and feedback on the optimization of MPS encoding.
+
+## License
+
+Distributed under Apache v2.0 License. See [`LICENSE`](LICENSE) for details.
