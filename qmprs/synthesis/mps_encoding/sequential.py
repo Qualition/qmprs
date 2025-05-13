@@ -396,14 +396,21 @@ class Sequential(MPSEncoder):
             self,
             mps: MPS,
             circuit_tensor_network: qtn.TensorNetwork,
-            unitary_layers: list[UnitaryLayer],
-            specific_layer_indices: list[int] = []
-        ) -> tuple[list[UnitaryLayer], qtn.TensorNetwork]:
+            unitary_layers: list[UnitaryLayer]
+        ) -> list[UnitaryLayer]:
         """ Perform a sweep of the unitary layers to optimize the gates
         using the environment tensor updates to reach the optimal gates
         for the circuit based on [2].
 
         This method implements Oall and allows for Iter Oi from [2].
+
+        Notes
+        -----
+        Given the majority of the circuit remains unchanged during the
+        optimization of individual gates, we can use MPS representation
+        and gradually update them to act as cache for the contraction
+        result and avoid recomputing the full circuit tensor network
+        every time we update a gate.
 
         Parameters
         ----------
@@ -423,33 +430,32 @@ class Sequential(MPSEncoder):
         -------
         `unitary_layers` : list[UnitaryLayer]
             The optimized unitary layers.
-        `circuit_tensor_network` : qtn.TensorNetwork
-            The optimized circuit tensor network.
         """
-        # We do not want to include the qubits, so we will
-        # explicitly control the iteration index
-        gate_index = 0
+        # Right MPS
+        target_mps_adjoint = mps.mps.conj()
 
-        for gate in circuit_tensor_network:
+        # Left MPS
+        circuit_mps = qtn.MatrixProductState.from_dense(
+            circuit_tensor_network.to_dense(
+                (circuit_tensor_network.outer_inds())
+            )
+        )
+
+        # Starting from the last gate optimize the gates
+        # and move backwards to the first gate
+        # This is one sweep
+        for gate in reversed(circuit_tensor_network.tensors):
             # We only update the gates, not the qubits
             if "PSI0" in gate.tags:
                 continue
 
-            # Update the unitary layer with the new unitary
-            gate_tag = list(gate.tags)[0]
-            layer_index, block_index, tensor_index = gate_tag.split("_")
+            # Apply the adjoint of the gate we are removing to the left
+            # MPS to update its definition
+            # This emulates the effect of moving through the circuit
+            circuit_mps = circuit_mps @ gate.conj()
 
-            # If the layer index is not in the specific layer indices,
-            # we skip the gate
-            if specific_layer_indices and int(layer_index) not in specific_layer_indices:
-                gate_index += 1
-                continue
-
-            # Remove the gate tensor from the circuit
-            # and contract the circuit with the conjugate of the MPS
-            # to get the environment tensor
-            circuit_tensor_network, _ = circuit_tensor_network.partition(gate.tags)
-            environment_tensor = mps.mps.conj() @ circuit_tensor_network
+            # Contract the two MPS to get the environment tensor
+            environment_tensor = target_mps_adjoint @ circuit_mps
 
             left_inds = gate.inds[:2] if len(gate.inds) == 4 else [gate.inds[0]]
             right_inds = gate.inds[2:] if len(gate.inds) == 4 else [gate.inds[1]]
@@ -479,8 +485,13 @@ class Sequential(MPSEncoder):
                     tags=gate.tags
                 )
 
-            # Put the new unitary back into the circuit to perform the update
-            circuit_tensor_network.add_tensor(new_tensor)
+            # Apply the adjoint of the updated gate to the right MPS
+            # to update its definition
+            # This emulates the effect of moving through the circuit
+            target_mps_adjoint = target_mps_adjoint @ new_tensor # type: ignore
+
+            gate_tag = list(gate.tags)[0]
+            layer_index, block_index, tensor_index = gate_tag.split("_")
 
             unitary_layers[int(layer_index)][int(block_index)][2][int(tensor_index)] = qtn.Tensor(
                 u_new.conj(),
@@ -488,9 +499,7 @@ class Sequential(MPSEncoder):
                 tags={"G"}
             )
 
-            gate_index += 1
-
-        return unitary_layers, circuit_tensor_network
+        return unitary_layers
 
     def _optimize_unitary_layers(
             self,
@@ -515,20 +524,16 @@ class Sequential(MPSEncoder):
         `unitary_layers` : list[UnitaryLayer]
             The optimized unitary layers.
         """
-        circuit_tensor_network = Sequential._tensor_network_from_unitary_layers(
-            mps, unitary_layers
-        )
-
-        # Create a copy of the unitary layers to avoid modifying the original
-        # This will be used to create the circuit after the optimization
-        updated_unitary_layers = copy.deepcopy(unitary_layers)
-
         for _ in range(num_sweeps):
-            updated_unitary_layers, circuit_tensor_network = self._sweep_unitary_layers(
-                mps, circuit_tensor_network, updated_unitary_layers
+            circuit_tensor_network = Sequential._tensor_network_from_unitary_layers(
+                mps, unitary_layers
             )
 
-        return updated_unitary_layers
+            unitary_layers = self._sweep_unitary_layers(
+                mps, circuit_tensor_network, unitary_layers
+            )
+
+        return unitary_layers
 
     def _sequential_unitary_circuit(
             self,
