@@ -789,34 +789,47 @@ class MPS:
         -----
         >>> mps.generate_unitary_layer()
         """
-        # Copy the MPS (as the MPS will be modified in place)
-        mps_copy = self.mps.copy(deep=True)
-
         generated_unitary_layer: list[UnitaryBlock] = []
 
+        # Based on the virtual dimensions, we define the
+        # 1D entanglement range, which is used to define
+        # the range of the staircase unitary layers
+        # i.e., if we have a MPS of 4 sites, where site 1
+        # and site 2 are entangled, and site 3 and site 4 are entangled,
+        # sub_mps_indices = [(0, 1), (2, 3)]
+        # And if site 1 and site 4 are entangled, regardless of site 2 and 3
+        # we have sub_mps_indices = [(0, 3)]
         sub_mps_indices = get_submps_indices(self.mps)
 
         for start_index, end_index in sub_mps_indices:
             generated_unitaries: list[qtn.Tensor] = []
 
             for index in range(start_index, end_index + 1):
-                if index == start_index:
-                    generated_unitaries = self._generate_first_site_unitary(
-                        mps_copy[index].data, # type: ignore
-                        generated_unitaries
-                    )
-
-                elif index == end_index:
+                # Since some sites may not be entangled at all, and not
+                # between sites that are entangled, they will need only
+                # one single-qubit unitary
+                # Therefore, we need to first check if the index is the last one
+                # as for such cases index will be equal to end_index
+                # If we move end_index to the second elif, then it will error
+                # out for such cases due to forcing a two-site unitary when
+                # it should be a single-site unitary
+                if index == end_index:
                     generated_unitaries = self._generate_last_site_unitary(
-                        mps_copy[index].data, # type: ignore
+                        self.mps[index].data, # type: ignore
                         start_index,
                         end_index,
                         generated_unitaries
                     )
 
+                elif index == start_index:
+                    generated_unitaries = self._generate_first_site_unitary(
+                        self.mps[index].data, # type: ignore
+                        generated_unitaries
+                    )
+
                 else:
                     generated_unitaries = self._generate_two_site_unitary(
-                        mps_copy[index].data, # type: ignore
+                        self.mps[index].data, # type: ignore
                         generated_unitaries
                     )
 
@@ -870,7 +883,7 @@ class MPS:
         # To facilitate the loss-less conversion of all core
         # tensors in a TN into isometries (i.e. inner product
         # preserving transformations between Hilbert space)
-        # we will canocalize the MPS
+        # we will canonicalize the MPS
         mps_copy.canonicalize(mode="right", normalize=True)
 
         generated_unitary_layer = mps_copy.generate_unitary_layer()
@@ -897,22 +910,16 @@ class MPS:
                     # | | | | | | |
                     #     GGG
                     #     | |
-                    self.mps.gate_(unitary_blocks[index - start_index].data, where=[index])
-
-                    # Define the location to contract the tensors after
-                    # applying the unitary gates
-                    loc = np.where(
-                        [isinstance(self.mps[site], tuple) for site in range(self.num_sites)]
-                    )[0][0]
-
-                    # Contract the tensors at the specified location
-                    # o-o-o-GGG-o-o-o
-                    # | | | / \ | | |
-                    self.contract_index(self.mps[loc][-1].inds[-1]) # type: ignore
+                    self.mps.gate_(
+                        unitary_blocks[index - start_index].data,
+                        where=[index],
+                        contract=True
+                    )
 
                 else:
                     # Apply a two-site gate using TEBD and then split resulting
                     # tensor to retrieve the MPS form:
+                    # (use `.gate_split_` as the operation is inplace)
                     #     -o-o-A-B-o-o-
                     #      | | | | | |            -o-o-GGG-o-o-           -o-o-X~Y-o-o-
                     #      | | GGG | |     ==>     | | | | | |     ==>     | | | | | |
@@ -922,9 +929,6 @@ class MPS:
                         unitary_blocks[index - start_index].data,
                         where=[index, index + 1]
                     )
-
-        self.permute(shape="lpr")
-        self.compress(mode="right")
 
     def _apply_inverse_unitary_layer(
             self,
@@ -948,23 +952,14 @@ class MPS:
                     #     | |
                     self.mps.gate_(
                         unitary_blocks[index - start_index].data.conj().T,
-                        where=[index]
+                        where=[index],
+                        contract=True
                     )
-
-                    # Define the location to contract the tensors after
-                    # applying the unitary gates
-                    loc = np.where(
-                        [isinstance(self.mps[jt], tuple) for jt in range(self.num_sites)]
-                    )[0][0]
-
-                    # Contract the tensors at the specified location
-                    # o-o-o-GGG-o-o-o
-                    # | | | / \ | | |
-                    self.contract_index(self.mps[loc][-1].inds[-1]) # type: ignore
 
                 else:
                     # Apply a two-site gate using TEBD and then split resulting
                     # tensor to retrieve the MPS form:
+                    # (use `.gate_split_` as the operation is inplace)
                     #     -o-o-A-B-o-o-
                     #      | | | | | |            -o-o-GGG-o-o-           -o-o-X~Y-o-o-
                     #      | | GGG | |     ==>     | | | | | |     ==>     | | | | | |
@@ -974,8 +969,6 @@ class MPS:
                         unitary_blocks[index - start_index].data.conj().T,
                         where=[index, index + 1]
                     )
-
-        self.permute(shape='lpr')
 
     def apply_unitary_layer(
             self,
