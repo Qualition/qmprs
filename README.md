@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/github/Qualition/qmprs/branch/main/graph/badge.svg?token=4JCK0BNV2P)](https://codecov.io/github/Qualition/qmprs)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/e287a2eed9e24d5e9d4a3ffe911ce6a5)](https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15437417.svg)](https://doi.org/10.5281/zenodo.15437417)
 
 `qmprs` is a state-of-the-art package for approximately compiling quantum circuits from high-level primitives such as statevectors and operators using Quantum Matrix Product Reduced Synthesis (QMPRS). This package enables optimal state-preparation and unitary synthesis using a high fidelity approximation through Matrix Product States (MPS) and Matrix Product Operators (MPO), which enable an exponential reduction from the conventional $O(2^N)$ to $O(N)$ for $N$ qubit operations.
 
@@ -97,13 +97,15 @@ We use [`GitHub issues`](https://github.com/Qualition/QMPRS/issues) for tracking
 
 ## Citation
 
-If you wish to attribute/distribute our work, please cite the accompanying paper:
-```
-@article{malekaninezhad2024qmprs,
+If you wish to attribute/distribute our work, please cite as per the BibTex below:
+```bibtex
+@software{qmprs2025,
    title={qmprs: {Q}uantum {M}atrix {P}roduct {R}educed {S}ynthesis},
    author={Amir Ali Malekani Nezhad, Tushar Pandey},
-   year={2026},
-   journal={arXiv preprint arXiv:TBD},
+   year={2025},
+   publisher={Zenodo},
+   doi={10.5281/zenodo.15437417},
+   url={https://doi.org/10.5281/zenodo.15437417},
 }
 ```
 
