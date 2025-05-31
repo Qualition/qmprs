@@ -120,6 +120,40 @@ class TestSequential(Template):
         # (this is a heuristic, but it should be enough for our purposes)
         assert circuit.get_depth() <= 20
 
+    def test_prepare_circuit_with_partial_entanglement_with_sweep(self) -> None:
+        """ Test the preparation of the MPS from a statevector with partial
+        entanglement using sweeps.
+        """
+        # Generate a circuit where a qubit is not entnagled, and not between
+        # two entangled qubits
+        num_qubits = 4
+        circuit = QiskitCircuit(num_qubits)
+        circuit.H(0)
+        circuit.CX(0, 1)
+        circuit.CX(1, 2)
+        circuit.H(3)
+
+        statevector = circuit.get_statevector()
+
+        # Define the Sequential encoder
+        encoder = Sequential(circuit_framework=QiskitCircuit)
+
+        # Prepare the MPS from the statevector using the Sequential encoder
+        circuit = encoder.prepare_state(
+            statevector=statevector, bond_dimension=32, num_layers=1, num_sweeps=1
+        )
+
+        # Extract the statevector from the circuit
+        statevector_from_circuit = circuit.get_statevector()
+
+        # Ensure that the statevector from the circuit is equal to the original statevector
+        assert 1 - abs(np.dot(statevector_from_circuit.conj(), statevector)) < 1e-2
+
+        # The produced circuit is much shallower compared to a full entangled circuit
+        # and we need to check that the circuit depth is less than 20
+        # (this is a heuristic, but it should be enough for our purposes)
+        assert circuit.get_depth() <= 7
+
     def test_layer_improvement(self) -> None:
         """ Test the improvement of the fidelity as the number of layers increases.
         """
