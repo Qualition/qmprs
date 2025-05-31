@@ -244,30 +244,35 @@ class Sequential(MPSEncoder):
         circuit = qtn.Circuit(N=mps.num_sites)
         gate_tracker: list[str] = []
 
-        for i, unitary_layer in enumerate(unitary_layers):
-            for j, (start_index, end_index, unitary_block) in enumerate(unitary_layer):
+        for layer_index, unitary_layer in enumerate(unitary_layers):
+            for block_index, (start_index, end_index, unitary_block) in enumerate(unitary_layer):
                 for index in range(start_index, end_index + 1):
-                    unitary = unitary_block[index].data
+                    tensor_index = index - start_index
+                    unitary = unitary_block[tensor_index].data
 
                     # MSB convention
+                    # Set contract=False to avoid tensor splitting for low-rank tensors
+                    # This is needed to ensure the gates are properly tagged
                     if index == end_index:
                         circuit.apply_gate_raw(
                             unitary.reshape(2, 2),
-                            where=[index]
+                            where=[index],
+                            contract=False
                         )
                     else:
                         circuit.apply_gate_raw(
                             unitary.reshape(2, 2, 2, 2),
-                            where=[index, index + 1]
+                            where=[index, index + 1],
+                            contract=False
                         )
 
                     # Add the gate to the tracker
-                    gate_tracker.append(f"{i}_{j}_{index}")
+                    gate_tracker.append(f"{layer_index}_{block_index}_{tensor_index}")
 
         tensor_network = qtn.TensorNetwork(circuit.psi)
 
         # We do not want to include the qubits, so we will
-        # excplitily control the iteration index
+        # explicitly control the iteration index
         gate_index = 0
 
         for gate in tensor_network:
