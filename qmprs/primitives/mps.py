@@ -48,45 +48,56 @@ UnitaryLayer: TypeAlias = list[UnitaryBlock]
 
 
 class MPS:
-    r""" `qmprs.primitives.MPS` is the class for creating and manipulating matrix product
-    states (MPS). This class wraps the `quimb.tensor.MatrixProductState` class to provide
-    a more user-friendly interface for creating and manipulating MPS.
+    r""" `qmprs.primitives.MPS` is the class for creating and manipulating matrix
+    product states (MPS). This class wraps the `quimb.tensor.MatrixProductState`
+    class to provide a more user-friendly interface for creating and manipulating
+    MPS.
 
     Refer to the link below for more information on the `quimb.tensor.MatrixProductState` class.
     https://quimb.readthedocs.io/en/latest/autoapi/quimb/tensor/tensor_1d/index.html#quimb.tensor.tensor_1d.MatrixProductState
 
     Notes
     -----
-    Matrix product states (MPS) are a class of 1D tensor networks that are widely used
-    in quantum computing to approximate the state of a quantum system. The MPS representation
-    allows for a polynomial or even exponential reduction in the number of parameters required
-    to represent a quantum state, making it a powerful tool for quantum state synthesis and
-    simulation.
+    Matrix product states (MPS) are a class of 1D tensor networks that are widely
+    used in quantum computing to approximate the state of a quantum system. The MPS
+    representation allows for a polynomial or even exponential reduction in the number
+    of parameters required to represent a quantum state, making it a powerful tool for
+    quantum state synthesis and simulation.
 
-    The MPS representation is defined by first performing successive SVDs on the statevector
-    of the quantum system. We use SVD to find low-rank structure in the tensor network and
-    reduce the dimension of the tensors. We then choose a canonical form for the MPS, which
-    is either "left" or "right". The canonical form of the MPS states how the singular values
-    from the SVD are absorbed (contracted) with the left or right tensors.
+    The MPS representation is defined by first performing successive SVDs on the
+    statevector of the quantum system. We use SVD to find low-rank structure in
+    the tensor network and reduce the dimension of the tensors. We then choose a
+    canonical form for the MPS, which is either "left" or "right". The canonical
+    form of the MPS states how the singular values from the SVD are absorbed
+    (contracted) with the left or right tensors.
 
-    The MPS can be further compressed by truncating the bond dimension of the MPS. The bond
-    dimension of the MPS determines the dimension of the unitary layers, and affects the
-    fidelity of the approximation. This is because the bond dimension captures the entanglement
-    structure of the quantum many-body system, where a higher bond dimension implies a higher
-    degree of entanglement.
+    The MPS can be further compressed by truncating the bond dimension of the MPS.
+    The bond dimension of the MPS determines the dimension of the unitary layers,
+    and affects the fidelity of the approximation. This is because the bond dimension
+    captures the entanglement structure of the quantum many-body system, where a higher
+    bond dimension implies a higher degree of entanglement.
 
-    Given each site will be represented as a $\chi\times\chi$ unitary matrix, the overall MPS
-    will have a scaling of $O(N\chi^2)$, where N is the number of sites and $\chi$ is the bond
-    dimension. Given a bond dimension of $2^{N/2}$ we can exactly represent any quantum state
-    of N qubits. However, for practical purposes, if we can keep the bond dimension constant,
-    the MPS will have a linear scaling with the number of sites.
+    MPS are particularly intended for approximating area-law entangled states, where
+    the entanglement entropy scales with the boundary of the system rather than the
+    volume. This is in contrast to states with volume-law entanglement, which cannot
+    be efficiently represented by MPS. This is a limitation of TNs in general, as
+    they require exponential bond dimension to represent such states. This is why
+    we opt for quantum computers to operate on such states.
+
+    Given each site will be represented as a $\chi\times\chi$ unitary matrix, the
+    overall MPS will have a scaling of $O(N\chi^2)$, where N is the number of sites
+    and $\chi$ is the bond dimension. Given a bond dimension of $2^{N/2}$ we can
+    exactly represent any quantum state of N qubits. However, for practical purposes,
+    if we can keep the bond dimension constant, the MPS will have a linear scaling
+    with the number of sites.
 
     The MPS can be written in the following
 
     $\ket{\psi} = \sum_{i_1, i_2, \cdots, i_N} Tr(A^{i_1}A^{i_2}\cdots A^{i_N}) \ket{i_1,i_2,\cdots,i_N}$
 
-    Where for arbitrary states, the MPS would be open-boundary condition, and non-translational
-    invariant, where A^{i} are not necessarily equal, and the first and last tensors are vectors.
+    Where for arbitrary states, the MPS would be open-boundary condition, and non-
+    translational invariant, where A^{i} are not necessarily equal, and the first
+    and last tensors are vectors.
 
     MPS Diagram:
     ```
@@ -96,11 +107,13 @@ class MPS:
     d d d d     d d d
     ```
 
-    where O represents the tensor at each site, d is the physical dimension, and D is the bond
-    dimension (also known as rank). For qubit systems, the physical dimension is 2.
+    where O represents the tensor at each site, d is the physical dimension, and
+    D is the bond dimension (also known as rank). For qubit systems, the physical
+    dimension is 2.
 
-    An important note is that the MPS representation is aimed for at least 2 qubits, as the MPS
-    approximates the entanglement structure of the quantum many-body systems.
+    An important note is that the MPS representation is aimed for at least 2 qubits,
+    as the MPS approximates the entanglement structure of the quantum many-body
+    systems.
 
     Parameters
     ----------
@@ -152,7 +165,7 @@ class MPS:
             self,
             statevector: Ket | NDArray[np.complex128] | None = None,
             mps: qtn.MatrixProductState | None = None,
-            bond_dimension: int=64
+            bond_dimension: int = 64
         ) -> None:
         """ Initialize a `qmprs.primitives.MPS` instance.
 
@@ -846,8 +859,16 @@ class MPS:
 
         return generated_unitary_layer
 
-    def generate_bond_D_unitary_layer(self) -> UnitaryLayer:
-        r""" Truncate the unitary layer's bond dimension to 2.
+    def generate_bond_D_unitary_layer(
+            self,
+            optimize_truncated_mps: bool = False,
+            num_iterations_per_site: int = 25
+        ) -> UnitaryLayer:
+        r""" Truncate the unitary layer's bond dimension to 2. This method provides two
+        options: either to analytically compress the MPS to a bond dimension of 2, or to
+        variationally perform the fitting to make the compressed MPS as close as possible
+        to the original MPS. The latter is done by optimizing the compressed MPS to minimize
+        the infidelity with the original MPS.
 
         Notes
         -----
@@ -858,6 +879,14 @@ class MPS:
         This is needed to ensure we only use one and two qubit gates.
 
         https://arxiv.org/pdf/2209.00595, Figure 1
+
+        Parameters
+        ----------
+        `optimize_truncated_mps` : bool, optional, default=False
+            Whether to optimize the compressed MPS. If True, the compressed MPS will
+            be variationally optimized to minimize the infidelity with the original MPS.
+        `num_iterations_per_site` : int, optional, default=25
+            The number of iterations per site to optimize the compressed MPS.
 
         Returns
         -------
@@ -875,18 +904,39 @@ class MPS:
         """
         # Copy the MPS (as the MPS will be modified in place with
         # `.compress` and `.canonicalize` methods)
-        mps_copy = copy.deepcopy(self)
+        mps_truncated = copy.deepcopy(self)
 
         # Truncate the MPS to the bond dimension of 2 via SVD
-        mps_copy.compress(mode="right", max_bond_dimension=self.physical_dimension)
+        if optimize_truncated_mps:
+            max_iterations = num_iterations_per_site * self.num_sites
+
+            # using the 1-site method can be more efficient for fixed chi
+            # which we do via `bsz=1`
+            # The `permute_arrays` argument is used to ensure the
+            # resulting MPS is in the "lpr" form, which is what is used
+            # in `Sequential` encoding
+            # If you use different permute shape, and observe near 0
+            # fidelity, check to make sure this is set to the correct value
+            mps_truncated.mps = qtn.tensor_network_1d_compress(
+                mps_truncated.mps,
+                max_bond=2,
+                cutoff=0.0,
+                method="fit",
+                bsz=1,
+                max_iterations=max_iterations,
+                permute_arrays="lpr" # type: ignore
+            )
+            mps_truncated.bond_dimension = 2
+        else:
+            mps_truncated.compress(mode="right", max_bond_dimension=2)
 
         # To facilitate the loss-less conversion of all core
         # tensors in a TN into isometries (i.e. inner product
         # preserving transformations between Hilbert space)
         # we will canonicalize the MPS
-        mps_copy.canonicalize(mode="right", normalize=True)
+        mps_truncated.canonicalize(mode="right", normalize=True)
 
-        generated_unitary_layer = mps_copy.generate_unitary_layer()
+        generated_unitary_layer = mps_truncated.generate_unitary_layer()
 
         return generated_unitary_layer
 
@@ -973,7 +1023,7 @@ class MPS:
     def apply_unitary_layer(
             self,
             unitary_layer: UnitaryLayer,
-            inverse: bool=False
+            inverse: bool = False
         ) -> None:
         """ Apply the unitary layer on the MPS. If inverse is True,
         we apply the inverse of the unitary layer to the MPS.
@@ -997,7 +1047,7 @@ class MPS:
     def apply_unitary_layers(
             self,
             unitary_layers: list[UnitaryLayer],
-            inverse: bool=False
+            inverse: bool = False
         ) -> None:
         """ Apply the unitary layers on the MPS. If inverse is True,
         we apply the inverse of the unitary layers in reverse order
@@ -1030,13 +1080,8 @@ class MPS:
         -----
         >>> mps.fidelity_with_zero_state()
         """
-        zero_state = np.zeros(2**self.num_sites, dtype=np.complex128)
-        zero_state[0] = 1
-
-        # Compute the current statevector of the MPS
-        current_statevector = self.to_statevector(self.mps).data.flatten()
-
-        return np.dot(current_statevector.conj().T, zero_state)
+        zero_mps = qtn.MPS_computational_state([0] * self.num_sites, dtype='complex128')
+        return zero_mps @ self.mps # type: ignore
 
     def draw(self) -> plt.Figure:
         """ Draw the MPS.
@@ -1133,6 +1178,6 @@ class MPS:
             value.mps.geometry_hash(strict_index_order=True)
 
         # Check if all the tensors in the MPSs are equal
-        all_close_eq = all(do("allclose", x, y) for x, y in zip(self.mps.arrays, self.mps.arrays))
+        all_close_eq = all(do("allclose", x, y) for x, y in zip(self.mps.arrays, value.mps.arrays))
 
         return geometry_hash_eq and all_close_eq

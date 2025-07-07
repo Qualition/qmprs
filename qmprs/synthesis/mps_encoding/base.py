@@ -22,7 +22,7 @@ __all__ = ["MPSEncoder"]
 from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
-from typing import Type, Literal
+from typing import Literal
 from quick.circuit import Circuit
 from quick.primitives import Ket
 
@@ -49,7 +49,7 @@ class MPSEncoder(ABC):
     """
     def __init__(
             self,
-            circuit_framework: Type[Circuit]
+            circuit_framework: type[Circuit]
         ) -> None:
         """ Initialize a `qmprs.mps_encoding.MPSEncoder` instance.
         """
@@ -59,7 +59,7 @@ class MPSEncoder(ABC):
             self,
             statevector: Ket | NDArray[np.complex128],
             bond_dimension: int,
-            compression_percentage: float=0.0,
+            compression_percentage: float = 0.0,
             index_type: Literal["row", "snake"]="row",
             **kwargs
         ) -> Circuit:
