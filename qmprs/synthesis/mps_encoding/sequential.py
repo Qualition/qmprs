@@ -24,7 +24,7 @@ import numpy as np
 import quimb.tensor as qtn # type: ignore
 from quick.circuit import Circuit
 
-from qmprs.primitives.mps import MPS, UnitaryBlock, UnitaryLayer
+from qmprs.primitives.mps import MPS, UnitaryLayer
 from qmprs.synthesis.mps_encoding import MPSEncoder
 
 
@@ -35,16 +35,16 @@ class Sequential(MPSEncoder):
 
     We find the sequence of $\chi$ by $\chi$ unitary matrices that optimally
     disentangle the MPS to the product state $\ket{00\cdots 0}$. We compress
-    the max bond dimension to 2, so that we would only use one and two qubit gates.
-    We then reverse the sequence to obtain the quantum circuit that prepares
-    the MPS from the product state.
+    the max bond dimension to 2, so that we would only use one and two qubit
+    gates and reach $O(N)$ depth scaling. We then reverse the sequence to
+    obtain the quantum circuit that prepares the MPS from the product state.
 
     Each layer disentangles the MPS further, and depending on how entangled
     an MPS is, or how large, the number of layers needed to sufficiently
     disentangle the MPS will differ. The pseudo-code for the algorithm is
     available in [2] for developers' reference in Algorithm 1.
 
-    [1] Ran, Shi-Ju.
+    [1] Ran.
     Encoding of Matrix Product States into Quantum Circuits of One- and Two-Qubit Gates (2020).
     https://arxiv.org/abs/1908.07958
 
@@ -52,50 +52,86 @@ class Sequential(MPSEncoder):
     Decomposition of Matrix Product States into Shallow Quantum Circuits (2022).
     https://arxiv.org/abs/2209.00595
 
+    [3] Lin, Dilip, Green, Smith, Pollmann.
+    Real- and imaginary-time evolution with compressed quantum circuits (2008).
+    https://arxiv.org/pdf/2008.10322
+
     Notes
     -----
     The sequential encoding is a method to prepare a target MPS using a sequence
     of $\chi x \chi$ unitary matrices on each site (aka qubit), where $\chi$ is
     the bond dimension of the MPS.
 
-    Assuming the bond dimension is a power of two, we would require $n = \log_2(\chi)$
-    qubits to prepare the unitary matrix. The exact preparation of a general unitary
-    matrix scales $O(2^{2n})$, and it is equivalent to $O(\chi^2)$. Furthermore,
-    given the linear dependence of the unitary matrices on the number of sites,
-    the overall scaling is $O(N\chi^2)$ as stated in [1].
+    Assuming the bond dimension is a power of two, we would require
+    $n = \log_2(\chi) + 1$ qubits to prepare each tensor depending on its bond
+    dimension. The exact preparation of a general unitary matrix scales $O(2^{2n})$,
+    and it is equivalent to $O(\chi^2)$.
 
-    In the implementation of the sequential encoding, we provide two parameters:
-    1) `num_layers` : The number of unitary layers used to prepare the MPS.
-    2) `bond_dimension` : The maximum bond dimension of the MPS.
+    Furthermore, given the linear dependence of the unitary matrices on the number
+    of sites, the overall scaling is $O(N\chi^2)$. We can exactly prepare the MPS
+    using a single layer but due to the impact of bond dimension on the unitary sizes,
+    we would require multi-qubit gates for certain tensors ([3] Appendix A).
 
-    Unlike [1], the bond dimension does not directly influence the circuit depth.
-    Instead, the bond dimension controls the maximum possible fidelity achievable
-    through the MPS encoding. The number of layers is the primary parameter that
-    influences the circuit depth.
+    What Ran [1] proposes instead is to truncate the bond dimension of the MPS to 2,
+    and prepare the truncated MPS instead. This keeps the bond dimension constant,
+    thus $O(N)$ scaling. Given truncation causes loss of fidelity, we need to use
+    multiple layers instead to approximately prepare the target MPS.
 
-    The algorithm was designed for long-range correlation and follows a unitary-only
-    operation approach which limits the efficiency of the encoding. The number
-    of layers scale linearly with the circuit depth, and exponentially with the
-    number of sites. However, the exponential growth is significantly reduced by
-    the low-rank structure of the MPS representation, which allows for increasingly
-    efficient encoding of quantum states as we scale the number of sites when compared
-    to exact encoding schema such as Mottonen, Shende, or SOTA Isometry by Iten et al.
-    Additionally, given the analytical decomposition employed, the sequential encoding
-    is computationally more efficient, however, that also means that increasing the
-    number of layers will only slightly improve the fidelity of the encoding.
+    Given the algorithm utilizes bond 2 truncation, it is intended for area-law
+    entangled states which do not require exponential bond dimensions to represent,
+    and thus do not lose significant fidelity when truncated to bond 2. This also
+    means significantly fewer layers needed to prepare. The synthesis may work for
+    volume-law entangled states, but it is not guaranteed to be efficient or
+    effective.
+
+    Ran's approach analytically produces the unitary layers that disentangle the MPS
+    and is known to slowly converge to the product state. This makes it increasingly
+    harder to reach a target fidelity as the fidelity gain slows down and plateaus
+    with each layers.
 
     To achieve a higher fidelity within a reasonable circuit depth, we use environment
-    tensor updates to reach the optimal gates for the circuit based on [2].
+    tensor updates to reach the optimal gates for the circuit based on [2]. This approach
+    allows us to efficiently optimize the unitary layers by sweeping through the tensor
+    network representation of the circuit (produced from the unitary layers) and updating
+    the tensors to maximize the inner product with the target MPS.
+
+    Additionally, to further improve the fidelity for volume-law entangled states, we
+    variationally optimize the bond 2 truncation of the MPS to improve the fidelity
+    between the truncated MPS and the target MPS. This provides slight improvement in
+    the fidelity for area-law entangled states, but is considerably more effective for
+    volume-law entangled states when paired with environment tensor updates. Due to the
+    stochastic nature of the optimization, one may need to re-run the compilation multiple
+    times to get the best fidelity.
 
     Parameters
     ----------
     `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
+    `variationally_optimize_truncated_mps` : bool, optional, default=False
+        Whether to variationally optimize the bond 2 truncation of the MPS to improve
+        the fidelity between the truncated MPS and the target MPS. This is useful for
+        volume-law entangled states where the bond dimension is significantly larger
+        than 2, and the truncation causes significant loss of fidelity. This is turned
+        off by default, as it slightly increases the runtime of the compilation and
+        provides only marginal improvement in fidelity for area-law entangled states.
+        Furthermore, given the stochastic nature of the optimization, one may need to
+        re-run the compilation multiple times to get the best fidelity, and thus it may
+        affect the reproducibility and in turn cause some unit tests to fail.
+    `num_iterations_per_site` : int, optional, default=25
+        The number of iterations to perform for the variational optimization of the
+        bond 2 truncation of the MPS. This defines `max_iterations` for the quimb
+        `qtn.tensor_network_1d_compress` method via `num_iterations_per_site * mps.num_sites`.
 
     Attributes
     ----------
     `circuit_framework` : type[quick.circuit.Circuit]
         The quantum circuit framework.
+    `variationally_optimize_truncated_mps` : bool
+        Whether to variationally optimize the bond 2 truncation of the MPS to improve
+        the fidelity between the truncated MPS and the target MPS.
+    `num_iterations_per_site` : int
+        The number of iterations to perform for the variational optimization of the
+        bond 2 truncation of the MPS.
     `fidelity_threshold` : float, optional, default=0.999999
         The fidelity threshold for the MPS encoding. The encoding stops when the
         fidelity of the MPS with the product state is greater than or equal to the
@@ -104,7 +140,8 @@ class Sequential(MPSEncoder):
     Raises
     ------
     ValueError
-        If the number of layers is not a positive integer.
+        - If the number of layers is not a positive integer.
+        - If the number of sweeps is not a non-negative integer.
 
     Usage
     -----
@@ -112,10 +149,15 @@ class Sequential(MPSEncoder):
     """
     def __init__(
             self,
-            circuit_framework: type[Circuit]
+            circuit_framework: type[Circuit],
+            variationally_optimize_truncated_mps: bool = False,
+            num_iterations_per_site: int = 25
         ) -> None:
 
         super().__init__(circuit_framework)
+
+        self.variationally_optimize_truncated_mps = variationally_optimize_truncated_mps
+        self.num_iterations_per_site = num_iterations_per_site
 
         self._fidelity_threshold = 1 - 1e-6
 
@@ -155,7 +197,7 @@ class Sequential(MPSEncoder):
     @staticmethod
     def _apply_unitary_layer_to_circuit(
             circuit: Circuit,
-            unitary_layer: list[UnitaryBlock]
+            unitary_layer: UnitaryLayer
         ) -> None:
         """ Apply a unitary layer to the quantum circuit.
 
@@ -163,7 +205,7 @@ class Sequential(MPSEncoder):
         ----------
         `circuit` : quick.circuit.Circuit
             The quantum circuit.
-        `unitary_layer` : list[qtn.Tensor]
+        `unitary_layer` : UnitaryLayer
             The unitary layer to be applied to the circuit.
         """
         for start_index, end_index, unitary_block in unitary_layer:
@@ -317,7 +359,10 @@ class Sequential(MPSEncoder):
         """
         # Generate the bond 2 truncation of the unitary layer
         # to form one and two qubit gates given Fig. 1 in [1]
-        unitary_layer = mps.generate_bond_D_unitary_layer()
+        unitary_layer = mps.generate_bond_D_unitary_layer(
+            optimize_truncated_mps=self.variationally_optimize_truncated_mps,
+            num_iterations_per_site=self.num_iterations_per_site
+        )
 
         # Given MPS ~= U_k|00...0>, we need to apply the inverse of U_k
         # to disentangle the MPS to the product state |00...0>
@@ -407,7 +452,7 @@ class Sequential(MPSEncoder):
         using the environment tensor updates to reach the optimal gates
         for the circuit based on [2].
 
-        This method implements Oall and allows for Iter Oi from [2].
+        Synonymously, this method implements Oall from [2].
 
         Notes
         -----
@@ -596,5 +641,7 @@ class Sequential(MPSEncoder):
 
         if not isinstance(num_layers, int) or num_layers < 1:
             raise ValueError("The number of layers must be a positive integer.")
+        if not isinstance(num_sweesps, int) or num_sweesps < 0:
+            raise ValueError("The number of sweeps must be a non-negative integer.")
 
         return self._sequential_unitary_circuit(mps, num_layers, num_sweesps)
