@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>81.0.0"]
+requires = ["setuptools>80.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -57,4 +57,5 @@ tests-root = "tests"
 test-framework = "pytest"
 ignore-paths = []
 formatter-cmds = ["disabled"]
+
 
